@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
+	"rhovic/backend/internal/config"
+	"rhovic/backend/internal/db"
 	"rhovic/backend/internal/server"
 
 	"github.com/go-chi/chi/v5"
@@ -13,45 +15,40 @@ import (
 )
 
 func main() {
-	port := getEnv("PORT", "8080")
+	cfg := config.Load()
+
+	ctx := context.Background()
+	pool, err := db.NewPool(ctx, cfg.DBURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
 
 	r := chi.NewRouter()
 
-	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-Id"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
-	// Basic health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	// Mount application routes
-	server.RegisterRoutes(r)
+	server.RegisterRoutes(r, server.Deps{Cfg: cfg, DB: pool})
 
 	srv := &http.Server{
-		Addr:         ":" + port,
+		Addr:         ":" + cfg.Port,
 		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("API running on port %s\n", port)
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func getEnv(key, fallback string) string {
-	if val, ok := os.LookupEnv(key); ok {
-		return val
-	}
-	return fallback
+	log.Printf("API running on :%s (env=%s)\n", cfg.Port, cfg.Env)
+	log.Fatal(srv.ListenAndServe())
 }
