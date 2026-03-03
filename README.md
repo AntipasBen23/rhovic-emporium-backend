@@ -1,5 +1,8 @@
 # Rhovic Marketplace Backend
 
+> [!NOTE]
+> This backend is optimized for Go 1.21+ and PostgreSQL.
+
 The robust, Go-powered core of the Rhovic Emporium Marketplace. This backend handles everything from secure vendor authentication to complex multi-role order management and Paystack-integrated payment processing.
 
 ## 🚀 Quick Start
