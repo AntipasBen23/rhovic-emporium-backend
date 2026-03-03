@@ -23,8 +23,8 @@ The robust, Go-powered core of the Rhovic Emporium Marketplace. This backend han
    ```env
    PORT=8080
    ENV=dev
-   DATABASE_URL=postgres://user:pass@localhost:5432/rhovic?sslmode=disable
-   JWT_SECRET=your-secure-random-string
+   DB_URL=postgres://user:pass@localhost:5432/rhovic?sslmode=disable
+   JWT_KEY=your-secure-random-string
    PAYSTACK_SECRET_KEY=your_paystack_secret
    ```
 
