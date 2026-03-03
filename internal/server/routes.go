@@ -52,7 +52,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// services
 	authSvc := services.NewAuthService(usersRepo, refreshRepo, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
 	productsSvc := services.NewProductsService(productsRepo)
-	checkoutSvc := services.NewCheckoutService(d.DB, ordersRepo, paymentsRepo, checkoutRepo, settingsRepo, ps)
+	checkoutSvc := services.NewCheckoutService(d.DB, ordersRepo, paymentsRepo, ledgerRepo, checkoutRepo, settingsRepo, ps)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, plansRepo, vpRepo, payoutsRepo)
 	adminSvc := services.NewAdminService(d.DB, metricsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"rhovic/backend/internal/httpjson"
 	"rhovic/backend/internal/middleware"
@@ -12,8 +11,8 @@ import (
 )
 
 type VendorHandlers struct {
-	vendor  *services.VendorService
-	orders  interface {
+	vendor *services.VendorService
+	orders interface {
 		ListByVendor(ctx interface{}, vendorID string, limit, offset int) ([]map[string]any, error)
 	}
 	maxBody int64
@@ -72,5 +71,4 @@ func (h *VendorHandlers) RequestPayout(w http.ResponseWriter, r *http.Request) {
 
 func (h *VendorHandlers) ListVendorOrders(w http.ResponseWriter, r *http.Request) {
 	httpjson.Error(w, 501, "not implemented", "vendor orders listing to be wired in server routes with repo")
-	_ = u // keep linter calm if needed
 }
