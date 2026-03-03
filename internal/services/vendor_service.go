@@ -14,11 +14,11 @@ import (
 )
 
 type VendorService struct {
-	pool     *pgxpool.Pool
-	vendors  *repo.VendorsRepo
-	plans    *repo.PlansRepo
-	vp       *repo.VendorProductsRepo
-	payouts  *repo.PayoutsRepo
+	pool    *pgxpool.Pool
+	vendors *repo.VendorsRepo
+	plans   *repo.PlansRepo
+	vp      *repo.VendorProductsRepo
+	payouts *repo.PayoutsRepo
 }
 
 func NewVendorService(pool *pgxpool.Pool, vendors *repo.VendorsRepo, plans *repo.PlansRepo, vp *repo.VendorProductsRepo, payouts *repo.PayoutsRepo) *VendorService {
@@ -94,6 +94,20 @@ func (s *VendorService) UpdateProduct(ctx context.Context, userID, productID str
 		}
 		return s.vp.Update(ctx, tx, productID, v.ID, req.Name, req.Description, req.Price, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
 	})
+}
+
+func (s *VendorService) ListProducts(ctx context.Context, userID string, limit, offset int) ([]map[string]any, error) {
+	v, err := s.vendors.GetByUserID(ctx, userID)
+	if err != nil || v.Status != "approved" {
+		return nil, domain.ErrForbidden
+	}
+	var out []map[string]any
+	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = s.vp.ListByVendor(ctx, tx, v.ID, limit, offset)
+		return err
+	})
+	return out, err
 }
 
 func (s *VendorService) RequestPayout(ctx context.Context, userID string, amount int64) (string, error) {

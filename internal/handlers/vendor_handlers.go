@@ -37,6 +37,19 @@ func (h *VendorHandlers) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, 201, map[string]any{"product_id": id})
 }
 
+func (h *VendorHandlers) ListProducts(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	limit := 50 // default
+	offset := 0
+
+	list, err := h.vendor.ListProducts(r.Context(), u.UserID, limit, offset)
+	if err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, list)
+}
+
 func (h *VendorHandlers) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	u := middleware.MustAuth(r)
 	id := chi.URLParam(r, "id")

@@ -91,6 +91,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		vr.Use(middleware.JWTAuth(d.Cfg.JWTKey))
 		vr.Use(middleware.RequireRole("vendor"))
 		vr.Post("/products", vendorH.CreateProduct)
+		vr.Get("/products", vendorH.ListProducts)
 		vr.Patch("/products/{id}", vendorH.UpdateProduct)
 		vr.Get("/orders", vendorOrdersH.List)
 		vr.Post("/payouts/request", vendorH.RequestPayout)
