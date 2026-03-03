@@ -34,12 +34,12 @@ func Load() Config {
 	}
 	log.Println("---------------------------------")
 
-	return Config{
+	c := Config{
 		Port: getEnv("PORT", "8080"),
 
-		DBURL:  mustEnv("DATABASE_URL"),
+		DBURL:  getEnv("DATABASE_URL", getEnv("DB_URL", "")),
 		Env:    getEnv("ENV", "dev"),
-		JWTKey: mustEnv("JWT_SECRET"),
+		JWTKey: getEnv("JWT_SECRET", getEnv("JWT_KEY", "")),
 
 		AccessTTL:  getDurationSeconds("JWT_ACCESS_TTL_SECONDS", 900),      // 15m
 		RefreshTTL: getDurationSeconds("JWT_REFRESH_TTL_SECONDS", 2592000), // 30d
@@ -52,6 +52,17 @@ func Load() Config {
 		PaystackPublicKey: getEnv("PAYSTACK_PUBLIC_KEY", ""),
 		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
 	}
+
+	if c.DBURL == "" {
+		log.Println("CRITICAL: Missing DATABASE_URL and DB_URL")
+		panic("missing database url")
+	}
+	if c.JWTKey == "" {
+		log.Println("CRITICAL: Missing JWT_SECRET and JWT_KEY")
+		panic("missing jwt secret")
+	}
+
+	return c
 }
 
 func getEnv(k, def string) string {
