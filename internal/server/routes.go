@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 
 	"rhovic/backend/internal/config"
 	"rhovic/backend/internal/handlers"
@@ -27,6 +29,12 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 	// Health
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("RHOVIC API")) })
+	r.Get("/debug/env", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		for _, e := range os.Environ() {
+			fmt.Fprintf(w, "%s\n", e)
+		}
+	})
 
 	// repos
 	usersRepo := repo.NewUsersRepo(d.DB)

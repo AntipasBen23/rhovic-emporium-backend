@@ -55,12 +55,10 @@ func Load() Config {
 	}
 
 	if c.DBURL == "" {
-		log.Println("CRITICAL: Missing DATABASE_URL and DB_URL")
-		panic("missing database url")
+		log.Println("WARNING: Missing DATABASE_URL and DB_URL. Database features will fail.")
 	}
 	if c.JWTKey == "" {
-		log.Println("CRITICAL: Missing JWT_SECRET and JWT_KEY")
-		panic("missing jwt secret")
+		log.Println("WARNING: Missing JWT_SECRET and JWT_KEY. Auth features will fail.")
 	}
 
 	return c
