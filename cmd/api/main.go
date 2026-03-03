@@ -8,6 +8,7 @@ import (
 
 	"rhovic/backend/internal/config"
 	"rhovic/backend/internal/db"
+	"rhovic/backend/internal/middleware"
 	"rhovic/backend/internal/server"
 
 	"github.com/go-chi/chi/v5"
@@ -39,6 +40,7 @@ func main() {
 
 	r := chi.NewRouter()
 
+	// 1. GLOBAL MIDDLEWARE MUST BE FIRST
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
@@ -47,6 +49,12 @@ func main() {
 		MaxAge:           300,
 	}))
 
+	middleware.ApplyBase(r, middleware.StackOpts{
+		GlobalRPM: cfg.RateLimitRPM,
+		AuthRPM:   cfg.AuthRateLimitRPM,
+	})
+
+	// 2. ROUTES SECOND
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

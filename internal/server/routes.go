@@ -22,10 +22,7 @@ type Deps struct {
 }
 
 func RegisterRoutes(r chi.Router, d Deps) {
-	middleware.ApplyBase(r, middleware.StackOpts{
-		GlobalRPM: d.Cfg.RateLimitRPM,
-		AuthRPM:   d.Cfg.AuthRateLimitRPM,
-	})
+	// (Middlewares are applied in main.go before calling RegisterRoutes)
 
 	// Health
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("RHOVIC API")) })
