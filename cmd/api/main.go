@@ -12,20 +12,30 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const Version = "1.0.3-debug-env-v3"
+const Version = "1.0.5-FINAL-SURVIVAL"
 
 func main() {
 	log.Printf("Starting RHOVIC API server version %s...", Version)
 	cfg := config.Load()
 
 	ctx := context.Background()
-	pool, err := db.NewPool(ctx, cfg.DBURL)
-	if err != nil {
-		log.Fatal(err)
+	var pool *pgxpool.Pool
+	var err error
+
+	if cfg.DBURL != "" {
+		pool, err = db.NewPool(ctx, cfg.DBURL)
+		if err != nil {
+			log.Printf("ERROR: Failed to connect to database: %v", err)
+		} else {
+			defer pool.Close()
+			log.Println("SUCCESS: Connected to database.")
+		}
+	} else {
+		log.Println("WARNING: Skipping database connection because DBURL is empty.")
 	}
-	defer pool.Close()
 
 	r := chi.NewRouter()
 
