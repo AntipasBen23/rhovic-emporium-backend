@@ -14,8 +14,10 @@ import (
 	"github.com/go-chi/cors"
 )
 
+const Version = "1.0.3-debug-env-v3"
+
 func main() {
-	log.Println("Starting RHOVIC API server...")
+	log.Printf("Starting RHOVIC API server version %s...", Version)
 	cfg := config.Load()
 
 	ctx := context.Background()

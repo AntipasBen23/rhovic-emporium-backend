@@ -27,12 +27,13 @@ type Config struct {
 }
 
 func Load() Config {
-	log.Println("--- Environment Variable Debug ---")
-	for _, e := range os.Environ() {
+	envs := os.Environ()
+	log.Printf("--- Environment Variable Debug (Count: %d) ---", len(envs))
+	for _, e := range envs {
 		pair := strings.SplitN(e, "=", 2)
-		log.Printf("Found Env Var: %s", pair[0])
+		log.Printf("Found Key: [%s] (Length: %d)", pair[0], len(pair[1]))
 	}
-	log.Println("---------------------------------")
+	log.Println("----------------------------------------------")
 
 	c := Config{
 		Port: getEnv("PORT", "8080"),
