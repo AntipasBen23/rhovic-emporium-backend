@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,6 +27,13 @@ type Config struct {
 }
 
 func Load() Config {
+	log.Println("--- Environment Variable Debug ---")
+	for _, e := range os.Environ() {
+		pair := strings.SplitN(e, "=", 2)
+		log.Printf("Found Env Var: %s", pair[0])
+	}
+	log.Println("---------------------------------")
+
 	return Config{
 		Port: getEnv("PORT", "8080"),
 
