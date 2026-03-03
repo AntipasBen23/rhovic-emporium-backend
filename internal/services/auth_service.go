@@ -2,13 +2,12 @@ package services
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"regexp"
 	"time"
 
 	"rhovic/backend/internal/domain"
 	"rhovic/backend/internal/repo"
+	"rhovic/backend/internal/util"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -16,13 +15,14 @@ import (
 
 type AuthService struct {
 	users   *repo.UsersRepo
+	refresh *repo.RefreshTokensRepo
 	jwtKey  []byte
 	access  time.Duration
-	refresh time.Duration
+	refreshTTL time.Duration
 }
 
-func NewAuthService(users *repo.UsersRepo, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
-	return &AuthService{users: users, jwtKey: []byte(jwtSecret), access: accessTTL, refresh: refreshTTL}
+func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
+	return &AuthService{users: users, refresh: refresh, jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL}
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string, role domain.Role) (string, error) {
@@ -30,63 +30,96 @@ func (s *AuthService) Register(ctx context.Context, email, password string, role
 		return "", domain.ErrInvalidInput
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), 12)
-	uid := newID()
-	err := s.users.Create(ctx, domain.User{
-		ID: uid, Email: email, PasswordHash: string(hash), Role: role,
-	})
+	uid := util.NewID()
+	err := s.users.Create(ctx, domain.User{ID: uid, Email: email, PasswordHash: string(hash), Role: role})
 	return uid, err
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (accessToken, refreshToken string, err error) {
+func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, error) {
 	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		return "", "", domain.ErrUnauthorized
+	}
+	return s.issueAndStoreRefresh(ctx, u.ID, string(u.Role))
+}
+
+func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (string, string, error) {
+	claims, err := s.parse(refreshToken)
 	if err != nil {
 		return "", "", domain.ErrUnauthorized
 	}
-	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+	if typ, _ := claims["typ"].(string); typ != "refresh" {
 		return "", "", domain.ErrUnauthorized
 	}
-	return s.issueTokens(u.ID, string(u.Role))
+	sub, _ := claims["sub"].(string)
+	role, _ := claims["role"].(string)
+	jti, _ := claims["jti"].(string)
+	if sub == "" || role == "" || jti == "" {
+		return "", "", domain.ErrUnauthorized
+	}
+
+	hash := util.SHA256Hex(refreshToken)
+	ok, err := s.refresh.IsValid(ctx, hash, jti)
+	if err != nil || !ok {
+		return "", "", domain.ErrUnauthorized
+	}
+
+	// rotate: revoke old, mint new
+	_ = s.refresh.Revoke(ctx, hash)
+	return s.issueAndStoreRefresh(ctx, sub, role)
 }
 
-func (s *AuthService) issueTokens(userID, role string) (string, string, error) {
-	accessJTI := newID()
-	refreshJTI := newID()
+func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return domain.ErrInvalidInput
+	}
+	hash := util.SHA256Hex(refreshToken)
+	return s.refresh.Revoke(ctx, hash)
+}
 
+func (s *AuthService) issueAndStoreRefresh(ctx context.Context, userID, role string) (string, string, error) {
 	now := time.Now()
+	accessJTI := util.NewID()
+	refreshJTI := util.NewID()
 
-	access := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":  userID,
-		"role": role,
-		"jti":  accessJTI,
-		"exp":  now.Add(s.access).Unix(),
-		"iat":  now.Unix(),
+	at := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": userID, "role": role, "jti": accessJTI,
+		"exp": now.Add(s.access).Unix(), "iat": now.Unix(),
 	})
-	at, err := access.SignedString(s.jwtKey)
+	accessToken, err := at.SignedString(s.jwtKey)
 	if err != nil {
 		return "", "", err
 	}
 
-	refresh := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":  userID,
-		"role": role,
-		"jti":  refreshJTI,
-		"typ":  "refresh",
-		"exp":  now.Add(s.refresh).Unix(),
-		"iat":  now.Unix(),
+	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": userID, "role": role, "jti": refreshJTI, "typ": "refresh",
+		"exp": now.Add(s.refreshTTL).Unix(), "iat": now.Unix(),
 	})
-	rt, err := refresh.SignedString(s.jwtKey)
+	refreshToken, err := rt.SignedString(s.jwtKey)
 	if err != nil {
 		return "", "", err
 	}
-	return at, rt, nil
+
+	hash := util.SHA256Hex(refreshToken)
+	if err := s.refresh.Create(ctx, util.NewID(), userID, hash, refreshJTI, now.Add(s.refreshTTL)); err != nil {
+		return "", "", err
+	}
+	return accessToken, refreshToken, nil
 }
 
-func newID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+func (s *AuthService) parse(token string) (jwt.MapClaims, error) {
+	tok, err := jwt.Parse(token, func(t *jwt.Token) (any, error) {
+		return s.jwtKey, nil
+	})
+	if err != nil || !tok.Valid {
+		return nil, domain.ErrUnauthorized
+	}
+	claims, ok := tok.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, domain.ErrUnauthorized
+	}
+	return claims, nil
 }
 
 var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-
 func validEmail(e string) bool { return emailRe.MatchString(e) }
