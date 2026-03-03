@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -27,13 +26,6 @@ type Config struct {
 }
 
 func Load() Config {
-	envs := os.Environ()
-	log.Printf("--- Environment Variable Debug (Count: %d) ---", len(envs))
-	for _, e := range envs {
-		pair := strings.SplitN(e, "=", 2)
-		log.Printf("Found Key: [%s] (Length: %d)", pair[0], len(pair[1]))
-	}
-	log.Println("----------------------------------------------")
 
 	c := Config{
 		Port: getEnv("PORT", "8080"),
@@ -55,10 +47,12 @@ func Load() Config {
 	}
 
 	if c.DBURL == "" {
-		log.Println("WARNING: Missing DATABASE_URL and DB_URL. Database features will fail.")
+		log.Println("CRITICAL: Missing DATABASE_URL and DB_URL")
+		panic("missing database url")
 	}
 	if c.JWTKey == "" {
-		log.Println("WARNING: Missing JWT_SECRET and JWT_KEY. Auth features will fail.")
+		log.Println("CRITICAL: Missing JWT_SECRET and JWT_KEY")
+		panic("missing jwt secret")
 	}
 
 	return c
