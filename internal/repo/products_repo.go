@@ -25,7 +25,7 @@ func (r *ProductsRepo) ListPublished(ctx context.Context, limit, offset int) ([]
 	}
 	defer rows.Close()
 
-	var out []domain.Product
+	out := []domain.Product{}
 	for rows.Next() {
 		var p domain.Product
 		if err := rows.Scan(&p.ID, &p.VendorID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.PricingUnit, &p.StockQuantity, &p.Status, &p.ImageURL, &p.CreatedAt); err != nil {

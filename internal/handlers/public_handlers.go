@@ -7,6 +7,7 @@ import (
 	"rhovic/backend/internal/httpjson"
 	"rhovic/backend/internal/services"
 
+	// Added import for domain
 	"github.com/go-chi/chi/v5"
 )
 
@@ -27,7 +28,7 @@ func (h *PublicHandlers) ListProducts(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 500, "failed", err.Error())
 		return
 	}
-	httpjson.Write(w, 200, map[string]any{"items": items})
+	httpjson.Write(w, 200, items)
 }
 
 func (h *PublicHandlers) GetProduct(w http.ResponseWriter, r *http.Request) {

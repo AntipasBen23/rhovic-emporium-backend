@@ -52,7 +52,7 @@ func (r *VendorProductsRepo) ListByVendor(ctx context.Context, tx pgx.Tx, vendor
 	}
 	defer rows.Close()
 
-	var out []map[string]any
+	out := []map[string]any{}
 	for rows.Next() {
 		var id, name, desc, unit, status string
 		var catID, imgURL *string
