@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -32,7 +33,7 @@ func Load() Config {
 		Env:    getEnv("ENV", "dev"),
 		JWTKey: mustEnv("JWT_SECRET"),
 
-		AccessTTL:  getDurationSeconds("JWT_ACCESS_TTL_SECONDS", 900),     // 15m
+		AccessTTL:  getDurationSeconds("JWT_ACCESS_TTL_SECONDS", 900),      // 15m
 		RefreshTTL: getDurationSeconds("JWT_REFRESH_TTL_SECONDS", 2592000), // 30d
 
 		RateLimitRPM:     getInt("RATE_LIMIT_RPM", 240),
@@ -55,6 +56,7 @@ func getEnv(k, def string) string {
 func mustEnv(k string) string {
 	v := os.Getenv(k)
 	if v == "" {
+		log.Printf("CRITICAL: Missing required environment variable: %s", k)
 		panic("missing env var: " + k)
 	}
 	return v

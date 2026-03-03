@@ -15,6 +15,7 @@ import (
 )
 
 func main() {
+	log.Println("Starting RHOVIC API server...")
 	cfg := config.Load()
 
 	ctx := context.Background()
