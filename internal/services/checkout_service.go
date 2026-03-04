@@ -107,10 +107,8 @@ func (s *CheckoutService) Checkout(ctx context.Context, buyerID string, req Chec
 			// compute
 			subtotal := int64(math.Round(float64(row.Price) * qtyF))
 			rate := defRate
-			if row.PlanRateText != "" {
-				if pr, e := strconv.ParseFloat(row.PlanRateText, 64); e == nil {
-					rate = pr
-				}
+			if row.AdminCommissionRate != nil {
+				rate = *row.AdminCommissionRate
 			}
 			if row.OverrideRate != nil {
 				rate = *row.OverrideRate

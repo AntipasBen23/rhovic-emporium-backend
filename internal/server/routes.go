@@ -30,7 +30,6 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	refreshRepo := repo.NewRefreshTokensRepo(d.DB)
 	productsRepo := repo.NewProductsRepo(d.DB)
 	vendorsRepo := repo.NewVendorsRepo(d.DB)
-	plansRepo := repo.NewPlansRepo(d.DB)
 	settingsRepo := repo.NewSettingsRepo(d.DB)
 	ordersRepo := repo.NewOrdersRepo()
 	paymentsRepo := repo.NewPaymentsRepo()
@@ -51,8 +50,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	productsSvc := services.NewProductsService(productsRepo)
 	checkoutSvc := services.NewCheckoutService(d.DB, ordersRepo, paymentsRepo, ledgerRepo, checkoutRepo, settingsRepo, ps)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
-	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, plansRepo, vpRepo, payoutsRepo)
-	adminSvc := services.NewAdminService(d.DB, metricsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
+	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
+	adminSvc := services.NewAdminService(d.DB, metricsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
 
 	// handlers
 	authH := handlers.NewAuthHandlers(authSvc, d.Cfg.MaxBodyBytes)
@@ -61,7 +60,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	webhookH := handlers.NewWebhookHandlers(d.Cfg.PaystackSecretKey, paymentsSvc)
 	vendorH := handlers.NewVendorHandlers(vendorSvc, d.Cfg.MaxBodyBytes)
 	vendorOrdersH := handlers.NewVendorOrdersHandlers(vendorsRepo, vendorOrdersRepo)
-	adminH := handlers.NewAdminHandlers(adminSvc, vendorsRepo, payoutsRepo, disputesRepo)
+	adminH := handlers.NewAdminHandlers(adminSvc, productsRepo, vendorsRepo, payoutsRepo, disputesRepo)
 
 	// AUTH (hard rate limit)
 	r.Route("/auth", func(ar chi.Router) {
@@ -104,6 +103,9 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 		ad.Get("/metrics", adminH.Metrics)
 		ad.Get("/vendors", adminH.ListVendors)
+
+		ad.Get("/products", adminH.ListProducts)
+		ad.Patch("/products/{id}/commission", adminH.UpdateProductCommission)
 
 		ad.Get("/payouts", adminH.ListPayouts)
 		ad.Patch("/payouts/{id}/approve", adminH.ApprovePayout)

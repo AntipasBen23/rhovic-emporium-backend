@@ -66,23 +66,23 @@ type Vendor struct {
 	AccountNumber string // Account / IBAN
 	// Marketplace metadata
 	Status             string // pending, approved, suspended, rejected
-	SubscriptionPlanID string
 	CommissionOverride *float64
 	CreatedAt          time.Time
 }
 
 type Product struct {
-	ID            string
-	VendorID      string
-	CategoryID    *string
-	Name          string
-	Description   string
-	Price         int64  // kobo
-	PricingUnit   string // yard, item, etc.
-	StockQuantity string // decimal stored as text for simplicity v1
-	Status        string // draft,published
-	ImageURL      *string
-	CreatedAt     time.Time
+	ID                  string
+	VendorID            string
+	CategoryID          *string
+	Name                string
+	Description         string
+	Price               int64  // kobo
+	PricingUnit         string // yard, item, etc.
+	StockQuantity       string // decimal stored as text for simplicity v1
+	Status              string // draft,published
+	ImageURL            *string
+	AdminCommissionRate *float64
+	CreatedAt           time.Time
 }
 
 type Order struct {

@@ -15,6 +15,7 @@ import (
 type AdminService struct {
 	pool     *pgxpool.Pool
 	metrics  *repo.AdminMetricsRepo
+	products *repo.ProductsRepo
 	vendors  *repo.VendorsRepo
 	settings *repo.SettingsRepo
 	payouts  *repo.PayoutsRepo
@@ -23,8 +24,8 @@ type AdminService struct {
 	ledger   *repo.LedgerRepo
 }
 
-func NewAdminService(pool *pgxpool.Pool, metrics *repo.AdminMetricsRepo, vendors *repo.VendorsRepo, settings *repo.SettingsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo, logs *repo.AdminLogsRepo, ledger *repo.LedgerRepo) *AdminService {
-	return &AdminService{pool: pool, metrics: metrics, vendors: vendors, settings: settings, payouts: payouts, disputes: disputes, logs: logs, ledger: ledger}
+func NewAdminService(pool *pgxpool.Pool, metrics *repo.AdminMetricsRepo, products *repo.ProductsRepo, vendors *repo.VendorsRepo, settings *repo.SettingsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo, logs *repo.AdminLogsRepo, ledger *repo.LedgerRepo) *AdminService {
+	return &AdminService{pool: pool, metrics: metrics, products: products, vendors: vendors, settings: settings, payouts: payouts, disputes: disputes, logs: logs, ledger: ledger}
 }
 
 func (s *AdminService) Metrics(ctx context.Context) (map[string]any, error) {
@@ -33,6 +34,14 @@ func (s *AdminService) Metrics(ctx context.Context) (map[string]any, error) {
 
 func (s *AdminService) SetDefaultCommission(ctx context.Context, adminID, rate string) error {
 	return s.settings.Set(ctx, "commission_default_rate", rate)
+}
+
+func (s *AdminService) AdminListProducts(ctx context.Context, limit, offset int) ([]domain.Product, error) {
+	return s.products.AdminListAll(ctx, limit, offset)
+}
+
+func (s *AdminService) UpdateProductCommission(ctx context.Context, adminID, productID string, rate *float64) error {
+	return s.products.UpdateAdminCommission(ctx, productID, rate)
 }
 
 func (s *AdminService) ApprovePayout(ctx context.Context, adminID, payoutID string) error {

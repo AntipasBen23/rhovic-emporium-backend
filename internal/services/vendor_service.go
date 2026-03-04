@@ -16,13 +16,12 @@ import (
 type VendorService struct {
 	pool    *pgxpool.Pool
 	vendors *repo.VendorsRepo
-	plans   *repo.PlansRepo
 	vp      *repo.VendorProductsRepo
 	payouts *repo.PayoutsRepo
 }
 
-func NewVendorService(pool *pgxpool.Pool, vendors *repo.VendorsRepo, plans *repo.PlansRepo, vp *repo.VendorProductsRepo, payouts *repo.PayoutsRepo) *VendorService {
-	return &VendorService{pool: pool, vendors: vendors, plans: plans, vp: vp, payouts: payouts}
+func NewVendorService(pool *pgxpool.Pool, vendors *repo.VendorsRepo, vp *repo.VendorProductsRepo, payouts *repo.PayoutsRepo) *VendorService {
+	return &VendorService{pool: pool, vendors: vendors, vp: vp, payouts: payouts}
 }
 
 type CreateProductReq struct {
@@ -56,14 +55,6 @@ func (s *VendorService) CreateProduct(ctx context.Context, userID string, req Cr
 
 	id := util.NewID()
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		lim, _ := s.plans.GetProductLimit(ctx, v.SubscriptionPlanID)
-		count, err := s.vp.CountByVendor(ctx, tx, v.ID)
-		if err != nil {
-			return err
-		}
-		if lim > 0 && count >= lim {
-			return domain.ErrConflict
-		}
 		return s.vp.Create(ctx, tx, id, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
 	})
 	return id, err

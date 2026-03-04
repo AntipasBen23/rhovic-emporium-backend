@@ -11,15 +11,14 @@ type CheckoutRepo struct{}
 func NewCheckoutRepo() *CheckoutRepo { return &CheckoutRepo{} }
 
 type CheckoutItemRow struct {
-	ProductID      string
-	VendorID       string
-	Price          int64
-	Status         string
-	VendorStatus   string
-	StockQtyText   string
-	PlanID         string
-	OverrideRate   *float64
-	PlanRateText   string
+	ProductID           string
+	VendorID            string
+	Price               int64
+	Status              string
+	VendorStatus        string
+	StockQtyText        string
+	OverrideRate        *float64
+	AdminCommissionRate *float64
 }
 
 func (r *CheckoutRepo) LoadItem(ctx context.Context, tx pgx.Tx, productID string) (CheckoutItemRow, error) {
@@ -32,14 +31,12 @@ func (r *CheckoutRepo) LoadItem(ctx context.Context, tx pgx.Tx, productID string
 		  p.status,
 		  v.status,
 		  p.stock_quantity::text,
-		  v.subscription_plan_id,
 		  v.commission_override,
-		  sp.commission_rate::text
+		  p.admin_commission_rate
 		FROM products p
 		JOIN vendors v ON v.id = p.vendor_id
-		LEFT JOIN subscription_plans sp ON sp.id = v.subscription_plan_id
 		WHERE p.id=$1
-	`, productID).Scan(&row.ProductID, &row.VendorID, &row.Price, &row.Status, &row.VendorStatus, &row.StockQtyText, &row.PlanID, &row.OverrideRate, &row.PlanRateText)
+	`, productID).Scan(&row.ProductID, &row.VendorID, &row.Price, &row.Status, &row.VendorStatus, &row.StockQtyText, &row.OverrideRate, &row.AdminCommissionRate)
 	return row, err
 }
 
