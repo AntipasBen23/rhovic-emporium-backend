@@ -14,10 +14,10 @@ import (
 )
 
 type AuthService struct {
-	users   *repo.UsersRepo
-	refresh *repo.RefreshTokensRepo
-	jwtKey  []byte
-	access  time.Duration
+	users      *repo.UsersRepo
+	refresh    *repo.RefreshTokensRepo
+	jwtKey     []byte
+	access     time.Duration
 	refreshTTL time.Duration
 }
 
@@ -25,14 +25,24 @@ func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, jwtS
 	return &AuthService{users: users, refresh: refresh, jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL}
 }
 
-func (s *AuthService) Register(ctx context.Context, email, password string, role domain.Role) (string, error) {
+func (s *AuthService) Register(ctx context.Context, email, password string, role domain.Role, vendor domain.VendorRegisterProfile) (string, error) {
 	if !validEmail(email) || len(password) < 8 {
 		return "", domain.ErrInvalidInput
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), 12)
 	uid := util.NewID()
 	err := s.users.Create(ctx, domain.User{ID: uid, Email: email, PasswordHash: string(hash), Role: role})
-	return uid, err
+	if err != nil {
+		return uid, err
+	}
+
+	// If registering as vendor, create the vendor profile row immediately.
+	if role == domain.RoleVendor {
+		if err := s.users.CreateVendorProfile(ctx, uid, vendor); err != nil {
+			return uid, err
+		}
+	}
+	return uid, nil
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, error) {
@@ -122,4 +132,5 @@ func (s *AuthService) parse(token string) (jwt.MapClaims, error) {
 }
 
 var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
 func validEmail(e string) bool { return emailRe.MatchString(e) }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"rhovic/backend/internal/domain"
+	"rhovic/backend/internal/util"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -21,6 +22,38 @@ func (r *UsersRepo) Create(ctx context.Context, u domain.User) error {
 		INSERT INTO users (id, email, password_hash, role, created_at)
 		VALUES ($1, $2, $3, $4, NOW())
 	`, u.ID, u.Email, u.PasswordHash, u.Role)
+	return err
+}
+
+// CreateVendorProfile inserts a new vendors row for a user who just registered as a vendor.
+func (r *UsersRepo) CreateVendorProfile(ctx context.Context, userID string, v domain.VendorRegisterProfile) error {
+	id := util.NewID()
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO vendors (
+			id, user_id,
+			first_name, last_name,
+			business_name, shop_url, phone,
+			street, street2, city, zip_code, country, state,
+			company_name, company_id, vat_id,
+			bank_name, account_number,
+			status, created_at
+		) VALUES (
+			$1, $2,
+			$3, $4,
+			$5, $6, $7,
+			$8, $9, $10, $11, $12, $13,
+			$14, $15, $16,
+			$17, $18,
+			'pending', NOW()
+		)
+	`,
+		id, userID,
+		v.FirstName, v.LastName,
+		v.ShopName, v.ShopURL, v.Phone,
+		v.Street, v.Street2, v.City, v.ZipCode, v.Country, v.State,
+		v.CompanyName, v.CompanyID, v.VatID,
+		v.BankName, v.AccountIBAN,
+	)
 	return err
 }
 

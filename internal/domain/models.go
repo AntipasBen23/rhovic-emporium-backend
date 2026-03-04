@@ -2,6 +2,26 @@ package domain
 
 import "time"
 
+// VendorRegisterProfile carries all profile fields submitted during vendor registration.
+type VendorRegisterProfile struct {
+	FirstName   string
+	LastName    string
+	ShopName    string
+	ShopURL     string
+	Phone       string
+	Street      string
+	Street2     string
+	City        string
+	ZipCode     string
+	Country     string
+	State       string
+	CompanyName string
+	CompanyID   string
+	VatID       string
+	BankName    string
+	AccountIBAN string
+}
+
 type Role string
 
 const (
@@ -21,12 +41,30 @@ type User struct {
 }
 
 type Vendor struct {
-	ID                 string
-	UserID             string
-	BusinessName       string
-	Phone              string
-	BankName           string
-	AccountNumber      string
+	ID     string
+	UserID string
+	// Personal info
+	FirstName string
+	LastName  string
+	// Shop info
+	BusinessName string // shop_name
+	ShopURL      string
+	Phone        string
+	// Address
+	Street  string
+	Street2 string
+	City    string
+	ZipCode string
+	Country string
+	State   string
+	// Company / tax
+	CompanyName string
+	CompanyID   string // Company ID/EUID Number
+	VatID       string // VAT/TAX ID
+	// Banking / payout
+	BankName      string
+	AccountNumber string // Account / IBAN
+	// Marketplace metadata
 	Status             string // pending, approved, suspended, rejected
 	SubscriptionPlanID string
 	CommissionOverride *float64
@@ -68,14 +106,14 @@ type OrderItem struct {
 }
 
 type Payment struct {
-	ID               string
-	OrderID          string
-	Provider         string
-	ProviderRef      string
-	Status           string // initiated,success,failed
-	Amount           int64
-	IdempotencyKey   string
-	CreatedAt        time.Time
+	ID             string
+	OrderID        string
+	Provider       string
+	ProviderRef    string
+	Status         string // initiated,success,failed
+	Amount         int64
+	IdempotencyKey string
+	CreatedAt      time.Time
 }
 
 type LedgerEntry struct {

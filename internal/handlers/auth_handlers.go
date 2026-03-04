@@ -21,6 +21,23 @@ type registerReq struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Role     string `json:"role"`
+	// Vendor profile fields (only used when role=vendor)
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	ShopName    string `json:"shop_name"`
+	ShopURL     string `json:"shop_url"`
+	Phone       string `json:"phone"`
+	Street      string `json:"street"`
+	Street2     string `json:"street2"`
+	City        string `json:"city"`
+	ZipCode     string `json:"zip_code"`
+	Country     string `json:"country"`
+	State       string `json:"state"`
+	CompanyName string `json:"company_name"`
+	CompanyID   string `json:"company_id"`
+	VatID       string `json:"vat_id"`
+	BankName    string `json:"bank_name"`
+	AccountIBAN string `json:"account_iban"`
 }
 
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
@@ -30,12 +47,34 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := domain.Role(req.Role)
-	if role == "" { role = domain.RoleBuyer }
+	if role == "" {
+		role = domain.RoleBuyer
+	}
 	if role == domain.RoleAdminSuper || role == domain.RoleAdminOps || role == domain.RoleAdminFin {
 		httpjson.Error(w, 403, "forbidden", "cannot self-register as admin")
 		return
 	}
-	id, err := h.auth.Register(r.Context(), req.Email, req.Password, role)
+
+	vendorProfile := domain.VendorRegisterProfile{
+		FirstName:   req.FirstName,
+		LastName:    req.LastName,
+		ShopName:    req.ShopName,
+		ShopURL:     req.ShopURL,
+		Phone:       req.Phone,
+		Street:      req.Street,
+		Street2:     req.Street2,
+		City:        req.City,
+		ZipCode:     req.ZipCode,
+		Country:     req.Country,
+		State:       req.State,
+		CompanyName: req.CompanyName,
+		CompanyID:   req.CompanyID,
+		VatID:       req.VatID,
+		BankName:    req.BankName,
+		AccountIBAN: req.AccountIBAN,
+	}
+
+	id, err := h.auth.Register(r.Context(), req.Email, req.Password, role, vendorProfile)
 	if err != nil {
 		httpjson.Error(w, 400, "registration failed", err.Error())
 		return
