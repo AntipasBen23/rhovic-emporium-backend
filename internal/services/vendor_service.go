@@ -74,6 +74,7 @@ type CreateProductReq struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	Price       int64   `json:"price"`
+	CompareAtPrice *int64 `json:"compare_at_price"`
 	PricingUnit string  `json:"pricing_unit"`
 	Stock       string  `json:"stock_quantity"`
 	Status      string  `json:"status"` // draft/published
@@ -91,6 +92,9 @@ func (s *VendorService) CreateProduct(ctx context.Context, userID string, req Cr
 	if req.Name == "" || req.Price <= 0 {
 		return "", domain.ErrInvalidInput
 	}
+	if req.CompareAtPrice != nil && *req.CompareAtPrice > 0 && *req.CompareAtPrice <= req.Price {
+		return "", domain.ErrInvalidInput
+	}
 	if req.Status == "" {
 		req.Status = "draft"
 	}
@@ -100,15 +104,17 @@ func (s *VendorService) CreateProduct(ctx context.Context, userID string, req Cr
 
 	id := util.NewID()
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		return s.vp.Create(ctx, tx, id, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
+		return s.vp.Create(ctx, tx, id, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.CompareAtPrice, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
 	})
 	return id, err
 }
 
 type UpdateProductReq struct {
+	CategoryID  *string `json:"category_id"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	Price       *int64  `json:"price"`
+	CompareAtPrice *int64 `json:"compare_at_price"`
 	PricingUnit *string `json:"pricing_unit"`
 	Stock       *string `json:"stock_quantity"`
 	Status      *string `json:"status"`
@@ -128,7 +134,24 @@ func (s *VendorService) UpdateProduct(ctx context.Context, userID, productID str
 		if !ok {
 			return domain.ErrForbidden
 		}
-		return s.vp.Update(ctx, tx, productID, v.ID, req.Name, req.Description, req.Price, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
+		return s.vp.Update(ctx, tx, productID, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.CompareAtPrice, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
+	})
+}
+
+func (s *VendorService) DeleteProduct(ctx context.Context, userID, productID string) error {
+	v, err := s.vendors.GetByUserID(ctx, userID)
+	if err != nil || v.Status != "approved" {
+		return domain.ErrForbidden
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		ok, err := s.vp.EnsureOwned(ctx, tx, productID, v.ID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return domain.ErrForbidden
+		}
+		return s.vp.Delete(ctx, tx, productID, v.ID)
 	})
 }
 

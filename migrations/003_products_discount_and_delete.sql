@@ -1,0 +1,3 @@
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS compare_at_price BIGINT NULL;
+

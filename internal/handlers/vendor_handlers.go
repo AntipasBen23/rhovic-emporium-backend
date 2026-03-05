@@ -133,6 +133,16 @@ func (h *VendorHandlers) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
 
+func (h *VendorHandlers) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.vendor.DeleteProduct(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
 func (h *VendorHandlers) RequestPayout(w http.ResponseWriter, r *http.Request) {
 	u := middleware.MustAuth(r)
 	var req struct {

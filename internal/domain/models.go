@@ -77,6 +77,7 @@ type Product struct {
 	Name                string
 	Description         string
 	Price               int64  // kobo
+	CompareAtPrice      *int64
 	PricingUnit         string // yard, item, etc.
 	StockQuantity       string // decimal stored as text for simplicity v1
 	Status              string // draft,published

@@ -95,6 +95,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		vr.Post("/products", vendorH.CreateProduct)
 		vr.Get("/products", vendorH.ListProducts)
 		vr.Patch("/products/{id}", vendorH.UpdateProduct)
+		vr.Delete("/products/{id}", vendorH.DeleteProduct)
 		vr.Get("/orders", vendorOrdersH.List)
 		vr.Post("/payouts/request", vendorH.RequestPayout)
 	})
