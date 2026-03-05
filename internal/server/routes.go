@@ -28,6 +28,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// repos
 	usersRepo := repo.NewUsersRepo(d.DB)
 	refreshRepo := repo.NewRefreshTokensRepo(d.DB)
+	resetRepo := repo.NewPasswordResetTokensRepo(d.DB)
 	productsRepo := repo.NewProductsRepo(d.DB)
 	vendorsRepo := repo.NewVendorsRepo(d.DB)
 	settingsRepo := repo.NewSettingsRepo(d.DB)
@@ -47,7 +48,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	ps := paystack.New(d.Cfg.PaystackSecretKey)
 
 	// services
-	authSvc := services.NewAuthService(usersRepo, refreshRepo, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
+	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
 	productsSvc := services.NewProductsService(productsRepo)
 	checkoutSvc := services.NewCheckoutService(d.DB, ordersRepo, paymentsRepo, ledgerRepo, checkoutRepo, settingsRepo, ps)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
@@ -70,6 +71,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ar.Post("/login", authH.Login)
 		ar.Post("/refresh", authH.Refresh)
 		ar.Post("/logout", authH.Logout)
+		ar.Post("/forgot-password", authH.ForgotPassword)
+		ar.Post("/reset-password", authH.ResetPassword)
 	})
 
 	// PUBLIC

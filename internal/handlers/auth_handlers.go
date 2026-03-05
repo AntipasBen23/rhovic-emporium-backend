@@ -135,3 +135,42 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
+
+type forgotPasswordReq struct {
+	Email string `json:"email"`
+}
+
+func (h *AuthHandlers) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req forgotPasswordReq
+	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
+		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	token, err := h.auth.ForgotPassword(r.Context(), req.Email)
+	if err != nil {
+		httpjson.Error(w, 400, "forgot password failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{
+		"ok":          true,
+		"reset_token": token,
+	})
+}
+
+type resetPasswordReq struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
+}
+
+func (h *AuthHandlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req resetPasswordReq
+	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
+		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	if err := h.auth.ResetPassword(r.Context(), req.Token, req.NewPassword); err != nil {
+		httpjson.Error(w, 400, "reset password failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}

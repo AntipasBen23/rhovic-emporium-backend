@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"time"
 
@@ -10,23 +11,25 @@ import (
 	"rhovic/backend/internal/util"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthService struct {
 	users      *repo.UsersRepo
 	refresh    *repo.RefreshTokensRepo
+	resets     *repo.PasswordResetTokensRepo
 	jwtKey     []byte
 	access     time.Duration
 	refreshTTL time.Duration
 }
 
-func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
-	return &AuthService{users: users, refresh: refresh, jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL}
+func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
+	return &AuthService{users: users, refresh: refresh, resets: resets, jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL}
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string, role domain.Role, vendor domain.VendorRegisterProfile) (string, error) {
-	if !validEmail(email) || len(password) < 8 {
+	if !validEmail(email) || !validPassword(password) {
 		return "", domain.ErrInvalidInput
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), 12)
@@ -87,6 +90,46 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return s.refresh.Revoke(ctx, hash)
 }
 
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) (string, error) {
+	if !validEmail(email) {
+		return "", domain.ErrInvalidInput
+	}
+
+	// Return a token either way to avoid revealing account existence.
+	resetToken := util.NewID() + util.NewID()
+
+	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return resetToken, nil
+		}
+		return "", err
+	}
+
+	tokenHash := util.SHA256Hex(resetToken)
+	expiresAt := time.Now().Add(30 * time.Minute)
+	if err := s.resets.Create(ctx, util.NewID(), u.ID, tokenHash, expiresAt); err != nil {
+		return "", err
+	}
+	return resetToken, nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword string) error {
+	if token == "" || !validPassword(newPassword) {
+		return domain.ErrInvalidInput
+	}
+	tokenHash := util.SHA256Hex(token)
+	userID, err := s.resets.Consume(ctx, tokenHash)
+	if err != nil {
+		return domain.ErrInvalidInput
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return err
+	}
+	return s.users.UpdatePassword(ctx, userID, string(hash))
+}
+
 func (s *AuthService) issueAndStoreRefresh(ctx context.Context, userID, role string) (string, string, error) {
 	now := time.Now()
 	accessJTI := util.NewID()
@@ -132,5 +175,16 @@ func (s *AuthService) parse(token string) (jwt.MapClaims, error) {
 }
 
 var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+var upperRe = regexp.MustCompile(`[A-Z]`)
+var lowerRe = regexp.MustCompile(`[a-z]`)
+var numberRe = regexp.MustCompile(`[0-9]`)
+var specialRe = regexp.MustCompile(`[^A-Za-z0-9\s]`)
 
 func validEmail(e string) bool { return emailRe.MatchString(e) }
+func validPassword(p string) bool {
+	return len(p) >= 8 &&
+		upperRe.MatchString(p) &&
+		lowerRe.MatchString(p) &&
+		numberRe.MatchString(p) &&
+		specialRe.MatchString(p)
+}

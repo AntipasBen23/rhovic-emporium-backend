@@ -76,3 +76,12 @@ func (r *UsersRepo) GetByID(ctx context.Context, id string) (domain.User, error)
 	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt)
 	return u, err
 }
+
+func (r *UsersRepo) UpdatePassword(ctx context.Context, id, passwordHash string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2
+		WHERE id = $1
+	`, id, passwordHash)
+	return err
+}
