@@ -44,6 +44,42 @@ func (s *AdminService) UpdateProductCommission(ctx context.Context, adminID, pro
 	return s.products.UpdateAdminCommission(ctx, productID, rate)
 }
 
+func (s *AdminService) ApproveVendor(ctx context.Context, adminID, vendorID string) error {
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var current string
+		if err := tx.QueryRow(ctx, `SELECT status FROM vendors WHERE id=$1`, vendorID).Scan(&current); err != nil {
+			return domain.ErrNotFound
+		}
+		if current == "approved" {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `UPDATE vendors SET status='approved' WHERE id=$1`, vendorID); err != nil {
+			return err
+		}
+		newV := "approved"
+		oldV := current
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "vendor_approved", "vendor", vendorID, &oldV, &newV)
+	})
+}
+
+func (s *AdminService) RejectVendor(ctx context.Context, adminID, vendorID string) error {
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var current string
+		if err := tx.QueryRow(ctx, `SELECT status FROM vendors WHERE id=$1`, vendorID).Scan(&current); err != nil {
+			return domain.ErrNotFound
+		}
+		if current == "rejected" {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `UPDATE vendors SET status='rejected' WHERE id=$1`, vendorID); err != nil {
+			return err
+		}
+		newV := "rejected"
+		oldV := current
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "vendor_rejected", "vendor", vendorID, &oldV, &newV)
+	})
+}
+
 func (s *AdminService) ApprovePayout(ctx context.Context, adminID, payoutID string) error {
 	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		// load payout

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"rhovic/backend/internal/db"
 	"rhovic/backend/internal/domain"
@@ -22,6 +23,50 @@ type VendorService struct {
 
 func NewVendorService(pool *pgxpool.Pool, vendors *repo.VendorsRepo, vp *repo.VendorProductsRepo, payouts *repo.PayoutsRepo) *VendorService {
 	return &VendorService{pool: pool, vendors: vendors, vp: vp, payouts: payouts}
+}
+
+func (s *VendorService) GetApplication(ctx context.Context, userID string) (domain.Vendor, error) {
+	v, err := s.vendors.GetByUserID(ctx, userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.Vendor{}, domain.ErrNotFound
+		}
+		return domain.Vendor{}, err
+	}
+	return v, nil
+}
+
+func (s *VendorService) Apply(ctx context.Context, userID string, profile domain.VendorRegisterProfile) (string, error) {
+	if strings.TrimSpace(profile.FirstName) == "" ||
+		strings.TrimSpace(profile.LastName) == "" ||
+		strings.TrimSpace(profile.ShopName) == "" ||
+		strings.TrimSpace(profile.Phone) == "" ||
+		strings.TrimSpace(profile.Street) == "" ||
+		strings.TrimSpace(profile.City) == "" ||
+		strings.TrimSpace(profile.ZipCode) == "" ||
+		strings.TrimSpace(profile.Country) == "" {
+		return "", domain.ErrInvalidInput
+	}
+
+	existing, err := s.vendors.GetByUserID(ctx, userID)
+	if err == nil {
+		if existing.Status == "rejected" {
+			if err := s.vendors.UpdateApplicationByUserID(ctx, userID, profile); err != nil {
+				return "", err
+			}
+			return existing.ID, nil
+		}
+		return "", domain.ErrConflict
+	}
+	if err != nil && err != pgx.ErrNoRows {
+		return "", err
+	}
+
+	id := util.NewID()
+	if err := s.vendors.CreateForUser(ctx, id, userID, profile); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 type CreateProductReq struct {

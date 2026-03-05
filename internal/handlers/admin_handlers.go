@@ -51,6 +51,26 @@ func (h *AdminHandlers) ListVendors(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, 200, map[string]any{"items": items})
 }
 
+func (h *AdminHandlers) ApproveVendor(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.ApproveVendor(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) RejectVendor(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.RejectVendor(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
 func (h *AdminHandlers) ListProducts(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))

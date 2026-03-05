@@ -88,7 +88,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// VENDOR
 	r.Route("/vendor", func(vr chi.Router) {
 		vr.Use(middleware.JWTAuth(d.Cfg.JWTKey))
-		vr.Use(middleware.RequireRole("vendor"))
+		vr.Get("/application", vendorH.Application)
+		vr.Post("/apply", vendorH.Apply)
 		vr.Post("/products", vendorH.CreateProduct)
 		vr.Get("/products", vendorH.ListProducts)
 		vr.Patch("/products/{id}", vendorH.UpdateProduct)
@@ -103,6 +104,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 		ad.Get("/metrics", adminH.Metrics)
 		ad.Get("/vendors", adminH.ListVendors)
+		ad.Patch("/vendors/{id}/approve", adminH.ApproveVendor)
+		ad.Patch("/vendors/{id}/reject", adminH.RejectVendor)
 
 		ad.Get("/products", adminH.ListProducts)
 		ad.Patch("/products/{id}/commission", adminH.UpdateProductCommission)
