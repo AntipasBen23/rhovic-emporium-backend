@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"rhovic/backend/internal/httpjson"
+	"rhovic/backend/internal/repo"
 	"rhovic/backend/internal/services"
 
 	// Added import for domain
@@ -13,10 +14,11 @@ import (
 
 type PublicHandlers struct {
 	products *services.ProductsService
+	cats     *repo.CategoriesRepo
 }
 
-func NewPublicHandlers(products *services.ProductsService) *PublicHandlers {
-	return &PublicHandlers{products: products}
+func NewPublicHandlers(products *services.ProductsService, cats *repo.CategoriesRepo) *PublicHandlers {
+	return &PublicHandlers{products: products, cats: cats}
 }
 
 func (h *PublicHandlers) ListProducts(w http.ResponseWriter, r *http.Request) {
@@ -39,4 +41,13 @@ func (h *PublicHandlers) GetProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpjson.Write(w, 200, p)
+}
+
+func (h *PublicHandlers) ListCategories(w http.ResponseWriter, r *http.Request) {
+	items, err := h.cats.List(r.Context())
+	if err != nil {
+		httpjson.Error(w, 500, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"items": items})
 }

@@ -41,6 +41,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	disputesRepo := repo.NewDisputesRepo(d.DB)
 	adminLogsRepo := repo.NewAdminLogsRepo()
 	metricsRepo := repo.NewAdminMetricsRepo(d.DB)
+	categoriesRepo := repo.NewCategoriesRepo(d.DB)
 
 	// external
 	ps := paystack.New(d.Cfg.PaystackSecretKey)
@@ -55,7 +56,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 	// handlers
 	authH := handlers.NewAuthHandlers(authSvc, d.Cfg.MaxBodyBytes)
-	pubH := handlers.NewPublicHandlers(productsSvc)
+	pubH := handlers.NewPublicHandlers(productsSvc, categoriesRepo)
 	checkoutH := handlers.NewCheckoutHandlers(checkoutSvc, d.Cfg.MaxBodyBytes)
 	webhookH := handlers.NewWebhookHandlers(d.Cfg.PaystackSecretKey, paymentsSvc)
 	vendorH := handlers.NewVendorHandlers(vendorSvc, d.Cfg.MaxBodyBytes)
@@ -74,6 +75,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// PUBLIC
 	r.Get("/products", pubH.ListProducts)
 	r.Get("/products/{id}", pubH.GetProduct)
+	r.Get("/categories", pubH.ListCategories)
 
 	// CHECKOUT (buyer must be logged in)
 	r.Route("/orders", func(or chi.Router) {
