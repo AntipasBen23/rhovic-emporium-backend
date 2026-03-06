@@ -6,34 +6,61 @@ import (
 
 	"rhovic/backend/internal/httpjson"
 	"rhovic/backend/internal/middleware"
-	"rhovic/backend/internal/repo"
+	"rhovic/backend/internal/services"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type VendorOrdersHandlers struct {
-	vendors *repo.VendorsRepo
-	orders  *repo.VendorOrdersRepo
+	checkout *services.CheckoutService
 }
 
-func NewVendorOrdersHandlers(vendors *repo.VendorsRepo, orders *repo.VendorOrdersRepo) *VendorOrdersHandlers {
-	return &VendorOrdersHandlers{vendors: vendors, orders: orders}
+func NewVendorOrdersHandlers(checkout *services.CheckoutService) *VendorOrdersHandlers {
+	return &VendorOrdersHandlers{checkout: checkout}
 }
 
 func (h *VendorOrdersHandlers) List(w http.ResponseWriter, r *http.Request) {
 	u := middleware.MustAuth(r)
-	v, err := h.vendors.GetByUserID(r.Context(), u.UserID)
-	if err != nil {
-		httpjson.Error(w, 403, "forbidden", "")
-		return
-	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 || limit > 200 { limit = 50 }
-	if offset < 0 { offset = 0 }
-
-	items, err := h.orders.ListByVendor(r.Context(), v.ID, limit, offset)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := h.checkout.VendorListOrders(r.Context(), u.UserID, limit, offset)
 	if err != nil {
-		httpjson.Error(w, 500, "failed", err.Error())
+		httpjson.Error(w, 400, "failed", err.Error())
 		return
 	}
 	httpjson.Write(w, 200, map[string]any{"items": items})
+}
+
+func (h *VendorOrdersHandlers) Get(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	out, err := h.checkout.VendorGetOrder(r.Context(), u.UserID, id)
+	if err != nil {
+		httpjson.Error(w, 404, "not found", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, out)
+}
+
+func (h *VendorOrdersHandlers) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := httpjson.DecodeStrict(r, &req, 1_048_576); err != nil {
+		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	if err := h.checkout.VendorUpdateFulfillment(r.Context(), u.UserID, id, req.Status); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
 }

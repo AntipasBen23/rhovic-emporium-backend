@@ -14,6 +14,7 @@ import (
 
 type AdminHandlers struct {
 	admin    *services.AdminService
+	checkout *services.CheckoutService
 	products *repo.ProductsRepo
 	vendors  *repo.VendorsRepo
 	payouts  *repo.PayoutsRepo
@@ -21,8 +22,15 @@ type AdminHandlers struct {
 	logsDB   interface{} // minimal for list logs later
 }
 
-func NewAdminHandlers(admin *services.AdminService, products *repo.ProductsRepo, vendors *repo.VendorsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo) *AdminHandlers {
-	return &AdminHandlers{admin: admin, products: products, vendors: vendors, payouts: payouts, disputes: disputes}
+func NewAdminHandlers(admin *services.AdminService, checkout *services.CheckoutService, products *repo.ProductsRepo, vendors *repo.VendorsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo) *AdminHandlers {
+	return &AdminHandlers{
+		admin:    admin,
+		checkout: checkout,
+		products: products,
+		vendors:  vendors,
+		payouts:  payouts,
+		disputes: disputes,
+	}
 }
 
 func (h *AdminHandlers) Metrics(w http.ResponseWriter, r *http.Request) {
@@ -171,4 +179,106 @@ func (h *AdminHandlers) ListDisputes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpjson.Write(w, 200, map[string]any{"items": items})
+}
+
+func (h *AdminHandlers) ListOrders(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := h.checkout.AdminListOrders(r.Context(), limit, offset)
+	if err != nil {
+		httpjson.Error(w, 500, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"items": items})
+}
+
+func (h *AdminHandlers) GetOrder(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	out, err := h.checkout.AdminGetOrder(r.Context(), id)
+	if err != nil {
+		httpjson.Error(w, 404, "not found", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, out)
+}
+
+func (h *AdminHandlers) ListPendingPayments(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := h.checkout.AdminListPendingPayments(r.Context(), limit, offset)
+	if err != nil {
+		httpjson.Error(w, 500, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"items": items})
+}
+
+func (h *AdminHandlers) ApproveOrderPayment(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.checkout.AdminApprovePayment(r.Context(), u.UserID, u.Role, id, r.RemoteAddr); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) RejectOrderPayment(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = httpjson.DecodeStrict(r, &req, 1_048_576)
+	if err := h.checkout.AdminRejectPayment(r.Context(), u.UserID, u.Role, id, req.Reason, r.RemoteAddr); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) ListVendorPayouts(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := h.checkout.AdminListVendorPayouts(r.Context(), limit, offset)
+	if err != nil {
+		httpjson.Error(w, 500, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"items": items})
+}
+
+func (h *AdminHandlers) MarkVendorPayoutPaid(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Reference string `json:"reference"`
+	}
+	if err := httpjson.DecodeStrict(r, &req, 1_048_576); err != nil {
+		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	if err := h.checkout.AdminMarkVendorPayoutPaid(r.Context(), u.UserID, u.Role, id, req.Reference, r.RemoteAddr); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
 }

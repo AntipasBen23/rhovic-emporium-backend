@@ -32,12 +32,9 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	productsRepo := repo.NewProductsRepo(d.DB)
 	vendorsRepo := repo.NewVendorsRepo(d.DB)
 	settingsRepo := repo.NewSettingsRepo(d.DB)
-	ordersRepo := repo.NewOrdersRepo()
-	paymentsRepo := repo.NewPaymentsRepo()
 	checkoutRepo := repo.NewCheckoutRepo()
 	ledgerRepo := repo.NewLedgerRepo()
 	vpRepo := repo.NewVendorProductsRepo()
-	vendorOrdersRepo := repo.NewVendorOrdersRepo(d.DB)
 	payoutsRepo := repo.NewPayoutsRepo(d.DB)
 	disputesRepo := repo.NewDisputesRepo(d.DB)
 	adminLogsRepo := repo.NewAdminLogsRepo()
@@ -50,7 +47,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// services
 	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
 	productsSvc := services.NewProductsService(productsRepo)
-	checkoutSvc := services.NewCheckoutService(d.DB, ordersRepo, paymentsRepo, ledgerRepo, checkoutRepo, settingsRepo, ps)
+	checkoutSvc := services.NewCheckoutService(d.DB, settingsRepo)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
 	adminSvc := services.NewAdminService(d.DB, metricsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
@@ -61,8 +58,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	checkoutH := handlers.NewCheckoutHandlers(checkoutSvc, d.Cfg.MaxBodyBytes)
 	webhookH := handlers.NewWebhookHandlers(d.Cfg.PaystackSecretKey, paymentsSvc)
 	vendorH := handlers.NewVendorHandlers(vendorSvc, d.Cfg.MaxBodyBytes)
-	vendorOrdersH := handlers.NewVendorOrdersHandlers(vendorsRepo, vendorOrdersRepo)
-	adminH := handlers.NewAdminHandlers(adminSvc, productsRepo, vendorsRepo, payoutsRepo, disputesRepo)
+	vendorOrdersH := handlers.NewVendorOrdersHandlers(checkoutSvc)
+	adminH := handlers.NewAdminHandlers(adminSvc, checkoutSvc, productsRepo, vendorsRepo, payoutsRepo, disputesRepo)
 
 	// AUTH (hard rate limit)
 	r.Route("/auth", func(ar chi.Router) {
@@ -80,12 +77,16 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Get("/products/{id}", pubH.GetProduct)
 	r.Get("/categories", pubH.ListCategories)
 
-	// CHECKOUT (buyer must be logged in)
+	// CHECKOUT / CUSTOMER ORDERS (buyer must be logged in)
+	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RequireRole("buyer")).Post("/checkout", checkoutH.Checkout)
 	r.Route("/orders", func(or chi.Router) {
 		or.Use(middleware.JWTAuth(d.Cfg.JWTKey))
 		or.Use(middleware.RequireRole("buyer"))
-		or.Post("/checkout", checkoutH.Checkout)
+		or.Post("/checkout", checkoutH.Checkout) // compatibility alias
+		or.Get("/{id}", checkoutH.GetOrder)
+		or.Post("/{id}/payment-proof", checkoutH.UploadPaymentProof)
 	})
+	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RequireRole("buyer")).Get("/my-orders", checkoutH.ListMyOrders)
 
 	// PAYSTACK WEBHOOK (public, signature verified)
 	r.Post("/payments/webhook", webhookH.PaystackWebhook)
@@ -100,6 +101,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		vr.Patch("/products/{id}", vendorH.UpdateProduct)
 		vr.Delete("/products/{id}", vendorH.DeleteProduct)
 		vr.Get("/orders", vendorOrdersH.List)
+		vr.Get("/orders/{id}", vendorOrdersH.Get)
+		vr.Patch("/orders/{id}/status", vendorOrdersH.UpdateStatus)
 		vr.Post("/payouts/request", vendorH.RequestPayout)
 	})
 
@@ -121,5 +124,17 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ad.Patch("/payouts/{id}/reject", adminH.RejectPayout)
 
 		ad.Get("/disputes", adminH.ListDisputes)
+
+		// marketplace manual-payment order flows
+		ad.Get("/orders", adminH.ListOrders)
+		ad.Get("/orders/{id}", adminH.GetOrder)
+		ad.Get("/payments/pending", adminH.ListPendingPayments)
+		ad.Post("/orders/{id}/approve-payment", adminH.ApproveOrderPayment)
+		ad.Post("/orders/{id}/reject-payment", adminH.RejectOrderPayment)
+		ad.Get("/vendor-payouts", adminH.ListVendorPayouts)
+		ad.Post("/vendor-payouts/{id}/mark-paid", adminH.MarkVendorPayoutPaid)
 	})
+
+	// uploaded manual transfer proofs
+	r.Handle("/files/payment-proofs/*", http.StripPrefix("/files/payment-proofs/", http.FileServer(http.Dir("uploads/payment_proofs"))))
 }
