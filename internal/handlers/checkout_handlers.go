@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 
 	"rhovic/backend/internal/httpjson"
@@ -88,4 +89,24 @@ func (h *CheckoutHandlers) UploadPaymentProof(w http.ResponseWriter, r *http.Req
 		return
 	}
 	httpjson.Write(w, 200, out)
+}
+
+func (h *CheckoutHandlers) DownloadPaymentProof(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	orderID := chi.URLParam(r, "id")
+	proofID := chi.URLParam(r, "proofID")
+
+	path, fileType, err := h.checkout.GetPaymentProofForCustomer(r.Context(), u.UserID, orderID, proofID)
+	if err != nil {
+		httpjson.Error(w, 404, "not found", err.Error())
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		httpjson.Error(w, 404, "not found", "proof file missing")
+		return
+	}
+	w.Header().Set("Content-Type", fileType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }

@@ -3,24 +3,24 @@ package middleware
 import (
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
 
 type limiter struct {
-	mu    sync.Mutex
-	rpm   int
-	hits  map[string][]time.Time
-	scope string
+	mu      sync.Mutex
+	rpm     int
+	hits    map[string][]time.Time
+	scope   string
+	maxKeys int
 }
 
 func GlobalLimiter(rpm int) *limiter {
-	return &limiter{rpm: rpm, hits: map[string][]time.Time{}, scope: "global"}
+	return &limiter{rpm: rpm, hits: map[string][]time.Time{}, scope: "global", maxKeys: 10000}
 }
 
 func PathLimiter(rpm int) *limiter {
-	return &limiter{rpm: rpm, hits: map[string][]time.Time{}, scope: "path"}
+	return &limiter{rpm: rpm, hits: map[string][]time.Time{}, scope: "path", maxKeys: 10000}
 }
 
 func RateLimit(l *limiter) func(http.Handler) http.Handler {
@@ -53,6 +53,13 @@ func RateLimit(l *limiter) func(http.Handler) http.Handler {
 
 			times = append(times, now)
 			l.hits[key] = times
+			if len(l.hits) > l.maxKeys {
+				for k, v := range l.hits {
+					if len(v) == 0 {
+						delete(l.hits, k)
+					}
+				}
+			}
 			l.mu.Unlock()
 
 			next.ServeHTTP(w, r)
@@ -61,11 +68,6 @@ func RateLimit(l *limiter) func(http.Handler) http.Handler {
 }
 
 func clientIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

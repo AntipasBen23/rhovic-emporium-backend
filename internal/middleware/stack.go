@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -24,6 +25,10 @@ func ApplyBase(r chi.Router, opts StackOpts) {
 			if req.Method == "POST" || req.Method == "PATCH" || req.Method == "PUT" {
 				// allow empty (e.g. webhook raw), otherwise must be JSON
 				ct := req.Header.Get("Content-Type")
+				if strings.HasPrefix(ct, "multipart/form-data") {
+					next.ServeHTTP(w, req)
+					return
+				}
 				if ct != "" && ct != "application/json" && ct != "application/json; charset=utf-8" {
 					w.WriteHeader(http.StatusUnsupportedMediaType)
 					return

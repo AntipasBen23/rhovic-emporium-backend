@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,12 +18,13 @@ type Config struct {
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 
-	RateLimitRPM      int
-	AuthRateLimitRPM  int
-	MaxBodyBytes      int64
-	PaystackSecretKey string
-	PaystackPublicKey string
-	BaseURL           string // used for callback URLs if needed
+	RateLimitRPM       int
+	AuthRateLimitRPM   int
+	MaxBodyBytes       int64
+	PaystackSecretKey  string
+	PaystackPublicKey  string
+	BaseURL            string // used for callback URLs if needed
+	CORSAllowedOrigins []string
 }
 
 func Load() Config {
@@ -44,6 +46,12 @@ func Load() Config {
 		PaystackSecretKey: getEnv("PAYSTACK_SECRET_KEY", ""),
 		PaystackPublicKey: getEnv("PAYSTACK_PUBLIC_KEY", ""),
 		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
+		CORSAllowedOrigins: getCSV("CORS_ALLOWED_ORIGINS", []string{
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"https://teal-souffle-5f6454.netlify.app",
+			"https://rhovic-emporium-admin.netlify.app",
+		}),
 	}
 
 	if c.DBURL == "" {
@@ -88,4 +96,23 @@ func getInt(k string, def int) int {
 
 func getDurationSeconds(k string, defSeconds int) time.Duration {
 	return time.Duration(getInt(k, defSeconds)) * time.Second
+}
+
+func getCSV(k string, def []string) []string {
+	v := strings.TrimSpace(os.Getenv(k))
+	if v == "" {
+		return def
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return def
+	}
+	return out
 }

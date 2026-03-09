@@ -85,6 +85,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		or.Post("/checkout", checkoutH.Checkout) // compatibility alias
 		or.Get("/{id}", checkoutH.GetOrder)
 		or.Post("/{id}/payment-proof", checkoutH.UploadPaymentProof)
+		or.Get("/{id}/payment-proofs/{proofID}", checkoutH.DownloadPaymentProof)
 	})
 	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RequireRole("buyer")).Get("/my-orders", checkoutH.ListMyOrders)
 
@@ -131,10 +132,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ad.Get("/payments/pending", adminH.ListPendingPayments)
 		ad.Post("/orders/{id}/approve-payment", adminH.ApproveOrderPayment)
 		ad.Post("/orders/{id}/reject-payment", adminH.RejectOrderPayment)
+		ad.Get("/payment-proofs/{proofID}", adminH.DownloadPaymentProof)
 		ad.Get("/vendor-payouts", adminH.ListVendorPayouts)
 		ad.Post("/vendor-payouts/{id}/mark-paid", adminH.MarkVendorPayoutPaid)
 	})
-
-	// uploaded manual transfer proofs
-	r.Handle("/files/payment-proofs/*", http.StripPrefix("/files/payment-proofs/", http.FileServer(http.Dir("uploads/payment_proofs"))))
 }

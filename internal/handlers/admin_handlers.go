@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 
 	"rhovic/backend/internal/httpjson"
@@ -281,4 +282,21 @@ func (h *AdminHandlers) MarkVendorPayoutPaid(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) DownloadPaymentProof(w http.ResponseWriter, r *http.Request) {
+	proofID := chi.URLParam(r, "proofID")
+	path, fileType, err := h.checkout.AdminGetPaymentProof(r.Context(), proofID)
+	if err != nil {
+		httpjson.Error(w, 404, "not found", err.Error())
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		httpjson.Error(w, 404, "not found", "proof file missing")
+		return
+	}
+	w.Header().Set("Content-Type", fileType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }

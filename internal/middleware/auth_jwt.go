@@ -9,8 +9,8 @@ import (
 )
 
 type AuthUser struct {
-	UserID string
-	Role   string
+	UserID   string
+	Role     string
 	TokenJTI string
 }
 
@@ -20,11 +20,16 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
-			if h == "" || !strings.HasPrefix(h, "Bearer ") {
+			raw := ""
+			if strings.HasPrefix(h, "Bearer ") {
+				raw = strings.TrimPrefix(h, "Bearer ")
+			} else if c, err := r.Cookie("rhovic_access_token"); err == nil && strings.TrimSpace(c.Value) != "" {
+				raw = strings.TrimSpace(c.Value)
+			}
+			if raw == "" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			raw := strings.TrimPrefix(h, "Bearer ")
 
 			tok, err := jwt.Parse(raw, func(t *jwt.Token) (any, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

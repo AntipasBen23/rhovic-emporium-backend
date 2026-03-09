@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"rhovic/backend/internal/domain"
 	"rhovic/backend/internal/httpjson"
@@ -98,6 +99,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 401, "invalid credentials", "")
 		return
 	}
+	setAuthCookies(w, r, at, rt)
 	httpjson.Write(w, 200, map[string]any{"access_token": at, "refresh_token": rt})
 }
 
@@ -108,7 +110,16 @@ type refreshReq struct {
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshReq
 	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
-		httpjson.Error(w, 400, "bad request", err.Error())
+		// allow cookie-based refresh without a JSON body
+		req.RefreshToken = ""
+	}
+	if strings.TrimSpace(req.RefreshToken) == "" {
+		if c, err := r.Cookie("rhovic_refresh_token"); err == nil {
+			req.RefreshToken = strings.TrimSpace(c.Value)
+		}
+	}
+	if req.RefreshToken == "" {
+		httpjson.Error(w, 400, "bad request", "missing refresh token")
 		return
 	}
 	at, rt, err := h.auth.Refresh(r.Context(), req.RefreshToken)
@@ -116,6 +127,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 401, "invalid refresh token", "")
 		return
 	}
+	setAuthCookies(w, r, at, rt)
 	httpjson.Write(w, 200, map[string]any{"access_token": at, "refresh_token": rt})
 }
 
@@ -126,13 +138,23 @@ type logoutReq struct {
 func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	var req logoutReq
 	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
-		httpjson.Error(w, 400, "bad request", err.Error())
+		// allow cookie-based logout without a JSON body
+		req.RefreshToken = ""
+	}
+	if strings.TrimSpace(req.RefreshToken) == "" {
+		if c, err := r.Cookie("rhovic_refresh_token"); err == nil {
+			req.RefreshToken = strings.TrimSpace(c.Value)
+		}
+	}
+	if req.RefreshToken == "" {
+		httpjson.Error(w, 400, "bad request", "missing refresh token")
 		return
 	}
 	if err := h.auth.Logout(r.Context(), req.RefreshToken); err != nil {
 		httpjson.Error(w, 400, "logout failed", err.Error())
 		return
 	}
+	clearAuthCookies(w, r)
 	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
 
@@ -146,15 +168,11 @@ func (h *AuthHandlers) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 400, "bad request", err.Error())
 		return
 	}
-	token, err := h.auth.ForgotPassword(r.Context(), req.Email)
-	if err != nil {
+	if _, err := h.auth.ForgotPassword(r.Context(), req.Email); err != nil {
 		httpjson.Error(w, 400, "forgot password failed", err.Error())
 		return
 	}
-	httpjson.Write(w, 200, map[string]any{
-		"ok":          true,
-		"reset_token": token,
-	})
+	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
 
 type resetPasswordReq struct {
@@ -173,4 +191,61 @@ func (h *AuthHandlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func cookieSecure(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func cookieSameSite(r *http.Request) http.SameSite {
+	if cookieSecure(r) {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
+}
+
+func setAuthCookies(w http.ResponseWriter, r *http.Request, access, refresh string) {
+	secure := cookieSecure(r)
+	sameSite := cookieSameSite(r)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "rhovic_access_token",
+		Value:    access,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   60 * 15,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "rhovic_refresh_token",
+		Value:    refresh,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   60 * 60 * 24 * 30,
+	})
+}
+
+func clearAuthCookies(w http.ResponseWriter, r *http.Request) {
+	secure := cookieSecure(r)
+	sameSite := cookieSameSite(r)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "rhovic_access_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   -1,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "rhovic_refresh_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   -1,
+	})
 }

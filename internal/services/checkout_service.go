@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -325,20 +326,39 @@ func sanitizeExt(contentType string) string {
 	}
 }
 
+func proofStoragePath(fileURL string) (string, error) {
+	const prefix = "/files/payment-proofs/"
+	if !strings.HasPrefix(fileURL, prefix) {
+		return "", domain.ErrInvalidInput
+	}
+	base := filepath.Base(fileURL)
+	if base == "." || base == "/" || strings.Contains(base, "..") {
+		return "", domain.ErrInvalidInput
+	}
+	return filepath.Join("uploads", "payment_proofs", base), nil
+}
+
 func (s *CheckoutService) UploadPaymentProof(ctx context.Context, customerID, orderID string, file multipart.File, header *multipart.FileHeader) (map[string]any, error) {
 	if orderID == "" || file == nil || header == nil {
 		return nil, domain.ErrInvalidInput
 	}
-	if header.Size > 8*1024*1024 {
+	const maxFileSize = 8 * 1024 * 1024
+	raw, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || len(raw) > maxFileSize {
 		return nil, domain.ErrInvalidInput
 	}
-	ext := sanitizeExt(header.Header.Get("Content-Type"))
+	detected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(raw[:min(512, len(raw))]), ";")[0]))
+	ext := sanitizeExt(detected)
 	if ext == "" {
 		return nil, domain.ErrInvalidInput
 	}
+	contentType := detected
 
 	var out map[string]any
-	err := db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var ownerID string
 		var paymentStatus string
 		err := tx.QueryRow(ctx, `SELECT customer_id,payment_status FROM orders WHERE id=$1`, orderID).Scan(&ownerID, &paymentStatus)
@@ -362,7 +382,7 @@ func (s *CheckoutService) UploadPaymentProof(ctx context.Context, customerID, or
 			return err
 		}
 		defer dst.Close()
-		if _, err := io.Copy(dst, file); err != nil {
+		if _, err := dst.Write(raw); err != nil {
 			return err
 		}
 
@@ -371,7 +391,7 @@ func (s *CheckoutService) UploadPaymentProof(ctx context.Context, customerID, or
 		_, err = tx.Exec(ctx, `
 			INSERT INTO payment_proofs (id,order_id,uploaded_by,file_url,file_type,review_status,admin_note,created_at,updated_at)
 			VALUES ($1,$2,$3,$4,$5,'pending','',NOW(),NOW())
-		`, proofID, orderID, customerID, fileURL, header.Header.Get("Content-Type"))
+		`, proofID, orderID, customerID, fileURL, contentType)
 		if err != nil {
 			return err
 		}
@@ -390,6 +410,43 @@ func (s *CheckoutService) UploadPaymentProof(ctx context.Context, customerID, or
 		return nil, err
 	}
 	return out, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (s *CheckoutService) GetPaymentProofForCustomer(ctx context.Context, customerID, orderID, proofID string) (string, string, error) {
+	var fileURL, fileType string
+	err := s.pool.QueryRow(ctx, `
+		SELECT p.file_url,p.file_type
+		FROM payment_proofs p
+		JOIN orders o ON o.id=p.order_id
+		WHERE p.id=$1 AND p.order_id=$2 AND o.customer_id=$3
+	`, proofID, orderID, customerID).Scan(&fileURL, &fileType)
+	if err != nil {
+		return "", "", domain.ErrNotFound
+	}
+	path, err := proofStoragePath(fileURL)
+	if err != nil {
+		return "", "", err
+	}
+	return path, fileType, nil
+}
+
+func (s *CheckoutService) AdminGetPaymentProof(ctx context.Context, proofID string) (string, string, error) {
+	var fileURL, fileType string
+	if err := s.pool.QueryRow(ctx, `SELECT file_url,file_type FROM payment_proofs WHERE id=$1`, proofID).Scan(&fileURL, &fileType); err != nil {
+		return "", "", domain.ErrNotFound
+	}
+	path, err := proofStoragePath(fileURL)
+	if err != nil {
+		return "", "", err
+	}
+	return path, fileType, nil
 }
 
 func (s *CheckoutService) ListMyOrders(ctx context.Context, customerID string, limit, offset int) ([]map[string]any, error) {
