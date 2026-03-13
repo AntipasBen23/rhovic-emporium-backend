@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"log"
 	"regexp"
 	"time"
 
 	"rhovic/backend/internal/domain"
+	"rhovic/backend/internal/mailer"
 	"rhovic/backend/internal/repo"
 	"rhovic/backend/internal/util"
 
@@ -19,13 +21,17 @@ type AuthService struct {
 	users      *repo.UsersRepo
 	refresh    *repo.RefreshTokensRepo
 	resets     *repo.PasswordResetTokensRepo
+	mailer     mailer.Sender
 	jwtKey     []byte
 	access     time.Duration
 	refreshTTL time.Duration
 }
 
-func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
-	return &AuthService{users: users, refresh: refresh, resets: resets, jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL}
+func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, sender mailer.Sender, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
+	return &AuthService{
+		users: users, refresh: refresh, resets: resets, mailer: sender,
+		jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL,
+	}
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string, role domain.Role, vendor domain.VendorRegisterProfile) (string, error) {
@@ -90,28 +96,35 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return s.refresh.Revoke(ctx, hash)
 }
 
-func (s *AuthService) ForgotPassword(ctx context.Context, email string) (string, error) {
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	if !validEmail(email) {
-		return "", domain.ErrInvalidInput
+		return domain.ErrInvalidInput
 	}
 
-	// Return a token either way to avoid revealing account existence.
 	resetToken := util.NewID() + util.NewID()
 
 	u, err := s.users.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return resetToken, nil
+			return nil
 		}
-		return "", err
+		return err
 	}
 
 	tokenHash := util.SHA256Hex(resetToken)
 	expiresAt := time.Now().Add(30 * time.Minute)
 	if err := s.resets.Create(ctx, util.NewID(), u.ID, tokenHash, expiresAt); err != nil {
-		return "", err
+		return err
 	}
-	return resetToken, nil
+	if s.mailer == nil {
+		return errors.New("password reset email provider not configured")
+	}
+	if err := s.mailer.SendPasswordReset(ctx, email, resetToken); err != nil {
+		log.Printf("WARN: password reset email send failed for %s: %v", email, err)
+		// Prevent account enumeration by returning success even on send errors.
+		return nil
+	}
+	return nil
 }
 
 func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword string) error {

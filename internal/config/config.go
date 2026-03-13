@@ -25,6 +25,12 @@ type Config struct {
 	PaystackPublicKey  string
 	BaseURL            string // used for callback URLs if needed
 	CORSAllowedOrigins []string
+	FrontendURL        string
+	EmailProvider      string
+	ResendAPIKey       string
+	ResendFromEmail    string
+	SendGridAPIKey     string
+	SendGridFromEmail  string
 }
 
 func Load() Config {
@@ -46,6 +52,12 @@ func Load() Config {
 		PaystackSecretKey: getEnv("PAYSTACK_SECRET_KEY", ""),
 		PaystackPublicKey: getEnv("PAYSTACK_PUBLIC_KEY", ""),
 		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
+		FrontendURL:       getEnv("FRONTEND_URL", "http://localhost:3000"),
+		EmailProvider:     strings.ToLower(getEnv("EMAIL_PROVIDER", "")),
+		ResendAPIKey:      getEnv("RESEND_API_KEY", ""),
+		ResendFromEmail:   getEnv("RESEND_FROM_EMAIL", ""),
+		SendGridAPIKey:    getEnv("SENDGRID_API_KEY", ""),
+		SendGridFromEmail: getEnv("SENDGRID_FROM_EMAIL", ""),
 		CORSAllowedOrigins: getCSV("CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://localhost:3001",

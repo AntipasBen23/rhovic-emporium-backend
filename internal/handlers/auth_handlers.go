@@ -168,7 +168,7 @@ func (h *AuthHandlers) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 400, "bad request", err.Error())
 		return
 	}
-	if _, err := h.auth.ForgotPassword(r.Context(), req.Email); err != nil {
+	if err := h.auth.ForgotPassword(r.Context(), req.Email); err != nil {
 		httpjson.Error(w, 400, "forgot password failed", err.Error())
 		return
 	}

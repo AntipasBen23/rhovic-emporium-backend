@@ -26,6 +26,14 @@ The robust, Go-powered core of the Rhovic Emporium Marketplace. This backend han
    DB_URL=postgres://user:pass@localhost:5432/rhovic?sslmode=disable
    JWT_KEY=your-secure-random-string
    PAYSTACK_SECRET_KEY=your_paystack_secret
+   FRONTEND_URL=http://localhost:3000
+   EMAIL_PROVIDER=resend
+   RESEND_API_KEY=re_xxx
+   RESEND_FROM_EMAIL=security@yourdomain.com
+   # or use SendGrid:
+   # EMAIL_PROVIDER=sendgrid
+   # SENDGRID_API_KEY=SG.xxx
+   # SENDGRID_FROM_EMAIL=security@yourdomain.com
    ```
 
 3. **Database Migrations**:

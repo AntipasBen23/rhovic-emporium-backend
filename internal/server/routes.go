@@ -5,6 +5,7 @@ import (
 
 	"rhovic/backend/internal/config"
 	"rhovic/backend/internal/handlers"
+	"rhovic/backend/internal/mailer"
 	"rhovic/backend/internal/middleware"
 	"rhovic/backend/internal/paystack"
 	"rhovic/backend/internal/repo"
@@ -43,9 +44,17 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 	// external
 	ps := paystack.New(d.Cfg.PaystackSecretKey)
+	mail := mailer.New(mailer.Config{
+		Provider:          d.Cfg.EmailProvider,
+		FrontendURL:       d.Cfg.FrontendURL,
+		ResendAPIKey:      d.Cfg.ResendAPIKey,
+		ResendFromEmail:   d.Cfg.ResendFromEmail,
+		SendGridAPIKey:    d.Cfg.SendGridAPIKey,
+		SendGridFromEmail: d.Cfg.SendGridFromEmail,
+	})
 
 	// services
-	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
+	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, mail, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
 	productsSvc := services.NewProductsService(productsRepo)
 	checkoutSvc := services.NewCheckoutService(d.DB, settingsRepo)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
