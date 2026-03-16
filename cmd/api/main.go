@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"rhovic/backend/internal/config"
@@ -33,7 +35,19 @@ func main() {
 
 	// 1. GLOBAL MIDDLEWARE MUST BE FIRST
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.CORSAllowedOrigins,
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			if isAllowedOrigin(origin, cfg.CORSAllowedOrigins) {
+				return true
+			}
+			// fallback for trusted Netlify deploy previews/custom domains
+			u, err := url.Parse(origin)
+			if err != nil || u.Host == "" {
+				return false
+			}
+			host := strings.ToLower(u.Hostname())
+			scheme := strings.ToLower(u.Scheme)
+			return scheme == "https" && strings.HasSuffix(host, ".netlify.app")
+		},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-Id"},
 		AllowCredentials: true,
@@ -63,4 +77,17 @@ func main() {
 
 	log.Printf("API running on :%s (env=%s)\n", cfg.Port, cfg.Env)
 	log.Fatal(srv.ListenAndServe())
+}
+
+func isAllowedOrigin(origin string, allowed []string) bool {
+	o := strings.TrimSpace(strings.ToLower(origin))
+	if o == "" {
+		return false
+	}
+	for _, a := range allowed {
+		if o == strings.TrimSpace(strings.ToLower(a)) {
+			return true
+		}
+	}
+	return false
 }
