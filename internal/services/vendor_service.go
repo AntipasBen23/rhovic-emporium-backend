@@ -70,15 +70,16 @@ func (s *VendorService) Apply(ctx context.Context, userID string, profile domain
 }
 
 type CreateProductReq struct {
-	CategoryID  *string `json:"category_id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Price       int64   `json:"price"`
-	CompareAtPrice *int64 `json:"compare_at_price"`
-	PricingUnit string  `json:"pricing_unit"`
-	Stock       string  `json:"stock_quantity"`
-	Status      string  `json:"status"` // draft/published
-	ImageURL    *string `json:"image_url"`
+	CategoryID     *string  `json:"category_id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	Price          int64    `json:"price"`
+	CompareAtPrice *int64   `json:"compare_at_price"`
+	PricingUnit    string   `json:"pricing_unit"`
+	Stock          string   `json:"stock_quantity"`
+	Status         string   `json:"status"` // draft/published
+	ImageURL       *string  `json:"image_url"`
+	ImageURLs      []string `json:"image_urls"`
 }
 
 func (s *VendorService) CreateProduct(ctx context.Context, userID string, req CreateProductReq) (string, error) {
@@ -101,24 +102,26 @@ func (s *VendorService) CreateProduct(ctx context.Context, userID string, req Cr
 	if _, err := strconv.ParseFloat(req.Stock, 64); err != nil {
 		return "", domain.ErrInvalidInput
 	}
+	req.ImageURLs = normalizeImageURLs(req.ImageURL, req.ImageURLs)
 
 	id := util.NewID()
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		return s.vp.Create(ctx, tx, id, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.CompareAtPrice, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
+		return s.vp.Create(ctx, tx, id, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.CompareAtPrice, req.PricingUnit, req.Stock, req.Status, req.ImageURL, req.ImageURLs)
 	})
 	return id, err
 }
 
 type UpdateProductReq struct {
-	CategoryID  *string `json:"category_id"`
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Price       *int64  `json:"price"`
-	CompareAtPrice *int64 `json:"compare_at_price"`
-	PricingUnit *string `json:"pricing_unit"`
-	Stock       *string `json:"stock_quantity"`
-	Status      *string `json:"status"`
-	ImageURL    *string `json:"image_url"`
+	CategoryID     *string  `json:"category_id"`
+	Name           *string  `json:"name"`
+	Description    *string  `json:"description"`
+	Price          *int64   `json:"price"`
+	CompareAtPrice *int64   `json:"compare_at_price"`
+	PricingUnit    *string  `json:"pricing_unit"`
+	Stock          *string  `json:"stock_quantity"`
+	Status         *string  `json:"status"`
+	ImageURL       *string  `json:"image_url"`
+	ImageURLs      []string `json:"image_urls"`
 }
 
 func (s *VendorService) UpdateProduct(ctx context.Context, userID, productID string, req UpdateProductReq) error {
@@ -126,6 +129,7 @@ func (s *VendorService) UpdateProduct(ctx context.Context, userID, productID str
 	if err != nil || v.Status != "approved" {
 		return domain.ErrForbidden
 	}
+	req.ImageURLs = normalizeImageURLs(req.ImageURL, req.ImageURLs)
 	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		ok, err := s.vp.EnsureOwned(ctx, tx, productID, v.ID)
 		if err != nil {
@@ -134,7 +138,7 @@ func (s *VendorService) UpdateProduct(ctx context.Context, userID, productID str
 		if !ok {
 			return domain.ErrForbidden
 		}
-		return s.vp.Update(ctx, tx, productID, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.CompareAtPrice, req.PricingUnit, req.Stock, req.Status, req.ImageURL)
+		return s.vp.Update(ctx, tx, productID, v.ID, req.CategoryID, req.Name, req.Description, req.Price, req.CompareAtPrice, req.PricingUnit, req.Stock, req.Status, req.ImageURL, req.ImageURLs)
 	})
 }
 
@@ -206,4 +210,29 @@ func (s *VendorService) RequestPayout(ctx context.Context, userID string, amount
 		return s.payouts.Create(ctx, tx, id, v.ID, amount)
 	})
 	return id, err
+}
+
+func normalizeImageURLs(primary *string, images []string) []string {
+	out := make([]string, 0, len(images)+1)
+	seen := map[string]struct{}{}
+
+	add := func(raw string) {
+		url := strings.TrimSpace(raw)
+		if url == "" {
+			return
+		}
+		if _, ok := seen[url]; ok {
+			return
+		}
+		seen[url] = struct{}{}
+		out = append(out, url)
+	}
+
+	if primary != nil {
+		add(*primary)
+	}
+	for _, img := range images {
+		add(img)
+	}
+	return out
 }

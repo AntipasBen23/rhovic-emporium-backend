@@ -82,6 +82,7 @@ type Product struct {
 	StockQuantity       string // decimal stored as text for simplicity v1
 	Status              string // draft,published
 	ImageURL            *string
+	ImageURLs           []string
 	AdminCommissionRate *float64
 	CreatedAt           time.Time
 }
