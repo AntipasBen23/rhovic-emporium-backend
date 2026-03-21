@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -298,32 +297,6 @@ func (s *CheckoutService) Checkout(ctx context.Context, customerID string, req C
 	return out, nil
 }
 
-func sanitizeExt(contentType string) string {
-	ct := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
-	switch ct {
-	case "image/jpeg", "image/jpg":
-		return ".jpg"
-	case "image/png":
-		return ".png"
-	case "application/pdf":
-		return ".pdf"
-	default:
-		return ""
-	}
-}
-
-func proofStoragePath(fileURL string) (string, error) {
-	const prefix = "/files/payment-proofs/"
-	if !strings.HasPrefix(fileURL, prefix) {
-		return "", domain.ErrInvalidInput
-	}
-	base := filepath.Base(fileURL)
-	if base == "." || base == "/" || strings.Contains(base, "..") {
-		return "", domain.ErrInvalidInput
-	}
-	return filepath.Join("uploads", "payment_proofs", base), nil
-}
-
 func (s *CheckoutService) UploadPaymentProof(ctx context.Context, customerID, orderID string, file multipart.File, header *multipart.FileHeader) (map[string]any, error) {
 	if orderID == "" || file == nil || header == nil {
 		return nil, domain.ErrInvalidInput
@@ -336,12 +309,10 @@ func (s *CheckoutService) UploadPaymentProof(ctx context.Context, customerID, or
 	if len(raw) == 0 || len(raw) > maxFileSize {
 		return nil, domain.ErrInvalidInput
 	}
-	detected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(raw[:min(512, len(raw))]), ";")[0]))
-	ext := sanitizeExt(detected)
-	if ext == "" {
-		return nil, domain.ErrInvalidInput
+	contentType, ext, err := DetectProofContentType(raw)
+	if err != nil {
+		return nil, err
 	}
-	contentType := detected
 
 	var out map[string]any
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -416,7 +387,7 @@ func (s *CheckoutService) GetPaymentProofForCustomer(ctx context.Context, custom
 	if err != nil {
 		return "", "", domain.ErrNotFound
 	}
-	path, err := proofStoragePath(fileURL)
+	path, err := ProofStoragePath(fileURL)
 	if err != nil {
 		return "", "", err
 	}
@@ -428,7 +399,7 @@ func (s *CheckoutService) AdminGetPaymentProof(ctx context.Context, proofID stri
 	if err := s.pool.QueryRow(ctx, `SELECT file_url,file_type FROM payment_proofs WHERE id=$1`, proofID).Scan(&fileURL, &fileType); err != nil {
 		return "", "", domain.ErrNotFound
 	}
-	path, err := proofStoragePath(fileURL)
+	path, err := ProofStoragePath(fileURL)
 	if err != nil {
 		return "", "", err
 	}
