@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -181,29 +180,16 @@ func (s *CheckoutService) Checkout(ctx context.Context, customerID string, req C
 				return domain.ErrInsufficient
 			}
 
-			rate := defaultRate
-			if p.VendorOverride != nil {
-				rate = *p.VendorOverride
-			}
-			if p.AdminCommissionRate != nil {
-				rate = *p.AdminCommissionRate
-			}
-			if rate < 0 {
-				rate = 0
-			}
+			rate := ResolveCommissionRate(defaultRate, p.VendorOverride, p.AdminCommissionRate)
+			lineTotal, commission, _ := CalculateCheckoutAmounts(p.Price, qtyF, rate)
 
-			lineTotal := int64(math.Round(float64(p.Price) * qtyF))
-			commission := int64(math.Round(float64(lineTotal) * rate))
-			net := lineTotal - commission
-
-			vs, ok := vendorSummary[p.VendorID]
-			if !ok {
-				vs = &CheckoutVendorSummary{VendorID: p.VendorID, VendorName: p.VendorName, VendorOrder: util.NewID()}
-				vendorSummary[p.VendorID] = vs
-			}
-			vs.Subtotal += lineTotal
-			vs.Commission += commission
-			vs.NetPayable += net
+			vs := AccumulateVendorSummary(vendorSummary, VendorSplitInput{
+				VendorID:    p.VendorID,
+				VendorName:  p.VendorName,
+				VendorOrder: util.NewID(),
+				LineTotal:   lineTotal,
+				Commission:  commission,
+			})
 
 			built = append(built, builtItem{
 				itemID: util.NewID(), vendorOrder: vs.VendorOrder, productID: p.ProductID, vendorID: p.VendorID,
