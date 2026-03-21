@@ -1,11 +1,15 @@
-package services
+package tests
 
-import "testing"
+import (
+	"testing"
+
+	"rhovic/backend/internal/util"
+)
 
 func TestNormalizeImageURLs_PreservesPrimaryFirstAndDeduplicates(t *testing.T) {
 	primary := "https://img.example.com/cover.jpg"
 
-	got := normalizeImageURLs(&primary, []string{
+	got := util.NormalizeImageURLs(&primary, []string{
 		" https://img.example.com/cover.jpg ",
 		"https://img.example.com/detail-1.jpg",
 		"https://img.example.com/detail-2.jpg",
@@ -31,7 +35,7 @@ func TestNormalizeImageURLs_PreservesPrimaryFirstAndDeduplicates(t *testing.T) {
 }
 
 func TestNormalizeImageURLs_AllowsGalleryWithoutPrimary(t *testing.T) {
-	got := normalizeImageURLs(nil, []string{
+	got := util.NormalizeImageURLs(nil, []string{
 		"https://img.example.com/detail-1.jpg",
 		"  https://img.example.com/detail-2.jpg  ",
 	})
@@ -51,4 +55,3 @@ func TestNormalizeImageURLs_AllowsGalleryWithoutPrimary(t *testing.T) {
 		}
 	}
 }
-

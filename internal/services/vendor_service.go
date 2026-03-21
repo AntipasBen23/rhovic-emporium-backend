@@ -102,7 +102,7 @@ func (s *VendorService) CreateProduct(ctx context.Context, userID string, req Cr
 	if _, err := strconv.ParseFloat(req.Stock, 64); err != nil {
 		return "", domain.ErrInvalidInput
 	}
-	req.ImageURLs = normalizeImageURLs(req.ImageURL, req.ImageURLs)
+	req.ImageURLs = util.NormalizeImageURLs(req.ImageURL, req.ImageURLs)
 
 	id := util.NewID()
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -129,7 +129,7 @@ func (s *VendorService) UpdateProduct(ctx context.Context, userID, productID str
 	if err != nil || v.Status != "approved" {
 		return domain.ErrForbidden
 	}
-	req.ImageURLs = normalizeImageURLs(req.ImageURL, req.ImageURLs)
+	req.ImageURLs = util.NormalizeImageURLs(req.ImageURL, req.ImageURLs)
 	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		ok, err := s.vp.EnsureOwned(ctx, tx, productID, v.ID)
 		if err != nil {
@@ -210,29 +210,4 @@ func (s *VendorService) RequestPayout(ctx context.Context, userID string, amount
 		return s.payouts.Create(ctx, tx, id, v.ID, amount)
 	})
 	return id, err
-}
-
-func normalizeImageURLs(primary *string, images []string) []string {
-	out := make([]string, 0, len(images)+1)
-	seen := map[string]struct{}{}
-
-	add := func(raw string) {
-		url := strings.TrimSpace(raw)
-		if url == "" {
-			return
-		}
-		if _, ok := seen[url]; ok {
-			return
-		}
-		seen[url] = struct{}{}
-		out = append(out, url)
-	}
-
-	if primary != nil {
-		add(*primary)
-	}
-	for _, img := range images {
-		add(img)
-	}
-	return out
 }
