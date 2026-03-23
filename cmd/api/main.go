@@ -17,7 +17,7 @@ import (
 	"github.com/go-chi/cors"
 )
 
-const Version = "1.1.1"
+const Version = "1.1.2"
 
 func main() {
 	log.Printf("Starting RHOVIC API server version %s...", Version)
