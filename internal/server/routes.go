@@ -60,7 +60,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	checkoutSvc := services.NewCheckoutService(d.DB, settingsRepo)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
-	adminSvc := services.NewAdminService(d.DB, metricsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
+	adminSvc := services.NewAdminService(d.DB, metricsRepo, usersRepo, refreshRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
 	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo)
 
 	// handlers
@@ -126,9 +126,14 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ad.Use(middleware.RequireRole("super_admin", "ops_admin", "finance_admin"))
 
 		ad.Get("/metrics", adminH.Metrics)
+		ad.Get("/users", adminH.ListUsers)
+		ad.Post("/users/{id}/logout", adminH.LogoutUser)
+		ad.Delete("/users/{id}", adminH.DeleteUser)
 		ad.Get("/vendors", adminH.ListVendors)
 		ad.Patch("/vendors/{id}/approve", adminH.ApproveVendor)
 		ad.Patch("/vendors/{id}/reject", adminH.RejectVendor)
+		ad.Post("/vendors/{id}/logout", adminH.LogoutVendor)
+		ad.Delete("/vendors/{id}", adminH.DeleteVendor)
 
 		ad.Get("/products", adminH.ListProducts)
 		ad.Patch("/products/{id}/commission", adminH.UpdateProductCommission)

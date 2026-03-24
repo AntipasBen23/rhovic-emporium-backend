@@ -94,3 +94,12 @@ func (r *ProductsRepo) UpdateAdminCommission(ctx context.Context, id string, rat
 	_, err := r.db.Exec(ctx, `UPDATE products SET admin_commission_rate=$2 WHERE id=$1`, id, rate)
 	return err
 }
+
+func (r *ProductsRepo) UnpublishByVendor(ctx context.Context, vendorID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE products
+		SET status = 'draft'
+		WHERE vendor_id = $1
+	`, vendorID)
+	return err
+}

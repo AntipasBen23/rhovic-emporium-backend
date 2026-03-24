@@ -15,6 +15,8 @@ import (
 type AdminService struct {
 	pool     *pgxpool.Pool
 	metrics  *repo.AdminMetricsRepo
+	users    *repo.UsersRepo
+	refresh  *repo.RefreshTokensRepo
 	products *repo.ProductsRepo
 	vendors  *repo.VendorsRepo
 	settings *repo.SettingsRepo
@@ -24,12 +26,95 @@ type AdminService struct {
 	ledger   *repo.LedgerRepo
 }
 
-func NewAdminService(pool *pgxpool.Pool, metrics *repo.AdminMetricsRepo, products *repo.ProductsRepo, vendors *repo.VendorsRepo, settings *repo.SettingsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo, logs *repo.AdminLogsRepo, ledger *repo.LedgerRepo) *AdminService {
-	return &AdminService{pool: pool, metrics: metrics, products: products, vendors: vendors, settings: settings, payouts: payouts, disputes: disputes, logs: logs, ledger: ledger}
+func NewAdminService(pool *pgxpool.Pool, metrics *repo.AdminMetricsRepo, users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, products *repo.ProductsRepo, vendors *repo.VendorsRepo, settings *repo.SettingsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo, logs *repo.AdminLogsRepo, ledger *repo.LedgerRepo) *AdminService {
+	return &AdminService{pool: pool, metrics: metrics, users: users, refresh: refresh, products: products, vendors: vendors, settings: settings, payouts: payouts, disputes: disputes, logs: logs, ledger: ledger}
 }
 
 func (s *AdminService) Metrics(ctx context.Context) (map[string]any, error) {
 	return s.metrics.Metrics(ctx)
+}
+
+func (s *AdminService) ListUsers(ctx context.Context, limit, offset int) ([]repo.AdminUserListItem, error) {
+	return s.users.AdminList(ctx, limit, offset)
+}
+
+func (s *AdminService) LogoutUser(ctx context.Context, adminID, userID string) error {
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := s.refresh.RevokeAllForUser(ctx, userID); err != nil {
+			return err
+		}
+		marker := "revoked"
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "user_logged_out", "user", userID, nil, &marker)
+	})
+}
+
+func (s *AdminService) DeleteUser(ctx context.Context, adminID, userID string) error {
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		user, err := s.users.GetByID(ctx, userID)
+		if err != nil {
+			return domain.ErrNotFound
+		}
+		if string(user.Role) == string(domain.RoleAdminSuper) || string(user.Role) == string(domain.RoleAdminOps) || string(user.Role) == string(domain.RoleAdminFin) {
+			return domain.ErrForbidden
+		}
+
+		if vendor, err := s.vendors.GetByUserID(ctx, userID); err == nil {
+			if err := s.products.UnpublishByVendor(ctx, vendor.ID); err != nil {
+				return err
+			}
+			if err := s.vendors.SoftDelete(ctx, vendor.ID); err != nil {
+				return err
+			}
+		}
+
+		if err := s.refresh.RevokeAllForUser(ctx, userID); err != nil {
+			return err
+		}
+		if err := s.users.SoftDelete(ctx, userID); err != nil {
+			return err
+		}
+
+		status := "deleted"
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "user_deleted", "user", userID, nil, &status)
+	})
+}
+
+func (s *AdminService) LogoutVendor(ctx context.Context, adminID, vendorID string) error {
+	vendor, err := s.vendors.GetByID(ctx, vendorID)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := s.refresh.RevokeAllForUser(ctx, vendor.UserID); err != nil {
+			return err
+		}
+		marker := "revoked"
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "vendor_logged_out", "vendor", vendorID, nil, &marker)
+	})
+}
+
+func (s *AdminService) DeleteVendor(ctx context.Context, adminID, vendorID string) error {
+	vendor, err := s.vendors.GetByID(ctx, vendorID)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := s.products.UnpublishByVendor(ctx, vendorID); err != nil {
+			return err
+		}
+		if err := s.refresh.RevokeAllForUser(ctx, vendor.UserID); err != nil {
+			return err
+		}
+		if err := s.vendors.SoftDelete(ctx, vendorID); err != nil {
+			return err
+		}
+		if err := s.users.UpdateRole(ctx, vendor.UserID, string(domain.RoleBuyer)); err != nil {
+			return err
+		}
+
+		status := "deleted"
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "vendor_deleted", "vendor", vendorID, nil, &status)
+	})
 }
 
 func (s *AdminService) SetDefaultCommission(ctx context.Context, adminID, rate string) error {

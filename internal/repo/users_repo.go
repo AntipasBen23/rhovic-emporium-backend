@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"rhovic/backend/internal/domain"
 	"rhovic/backend/internal/util"
@@ -11,6 +12,17 @@ import (
 
 type UsersRepo struct {
 	db *pgxpool.Pool
+}
+
+type AdminUserListItem struct {
+	ID              string     `json:"id"`
+	Email           string     `json:"email"`
+	Role            string     `json:"role"`
+	CreatedAt       time.Time  `json:"created_at"`
+	VendorID        *string    `json:"vendor_id,omitempty"`
+	VendorName      *string    `json:"vendor_name,omitempty"`
+	VendorStatus    *string    `json:"vendor_status,omitempty"`
+	VendorDeletedAt *time.Time `json:"vendor_deleted_at,omitempty"`
 }
 
 func NewUsersRepo(db *pgxpool.Pool) *UsersRepo {
@@ -62,7 +74,7 @@ func (r *UsersRepo) GetByEmail(ctx context.Context, email string) (domain.User, 
 	err := r.db.QueryRow(ctx, `
 		SELECT id, email, password_hash, role, created_at
 		FROM users
-		WHERE email = $1
+		WHERE email = $1 AND deleted_at IS NULL
 	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt)
 	return u, err
 }
@@ -72,7 +84,7 @@ func (r *UsersRepo) GetByID(ctx context.Context, id string) (domain.User, error)
 	err := r.db.QueryRow(ctx, `
 		SELECT id, email, password_hash, role, created_at
 		FROM users
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt)
 	return u, err
 }
@@ -83,5 +95,65 @@ func (r *UsersRepo) UpdatePassword(ctx context.Context, id, passwordHash string)
 		SET password_hash = $2
 		WHERE id = $1
 	`, id, passwordHash)
+	return err
+}
+
+func (r *UsersRepo) AdminList(ctx context.Context, limit, offset int) ([]AdminUserListItem, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			u.id,
+			u.email,
+			u.role,
+			u.created_at,
+			v.id,
+			v.business_name,
+			v.status,
+			v.deleted_at
+		FROM users u
+		LEFT JOIN vendors v ON v.user_id = u.id
+		WHERE u.deleted_at IS NULL
+		ORDER BY u.created_at DESC
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []AdminUserListItem{}
+	for rows.Next() {
+		var item AdminUserListItem
+		if err := rows.Scan(
+			&item.ID,
+			&item.Email,
+			&item.Role,
+			&item.CreatedAt,
+			&item.VendorID,
+			&item.VendorName,
+			&item.VendorStatus,
+			&item.VendorDeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *UsersRepo) SoftDelete(ctx context.Context, userID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET deleted_at = now()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, userID)
+	return err
+}
+
+func (r *UsersRepo) UpdateRole(ctx context.Context, userID, role string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET role = $2
+		WHERE id = $1 AND deleted_at IS NULL
+	`, userID, role)
 	return err
 }

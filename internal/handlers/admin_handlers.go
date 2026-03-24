@@ -43,6 +43,43 @@ func (h *AdminHandlers) Metrics(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, 200, out)
 }
 
+func (h *AdminHandlers) ListUsers(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := h.admin.ListUsers(r.Context(), limit, offset)
+	if err != nil {
+		httpjson.Error(w, 500, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"items": items})
+}
+
+func (h *AdminHandlers) LogoutUser(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.LogoutUser(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.DeleteUser(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
 func (h *AdminHandlers) ListVendors(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -74,6 +111,26 @@ func (h *AdminHandlers) RejectVendor(w http.ResponseWriter, r *http.Request) {
 	u := middleware.MustAuth(r)
 	id := chi.URLParam(r, "id")
 	if err := h.admin.RejectVendor(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) LogoutVendor(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.LogoutVendor(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+func (h *AdminHandlers) DeleteVendor(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.DeleteVendor(r.Context(), u.UserID, id); err != nil {
 		httpjson.Error(w, 400, "failed", err.Error())
 		return
 	}

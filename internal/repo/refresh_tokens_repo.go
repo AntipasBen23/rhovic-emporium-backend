@@ -34,3 +34,12 @@ func (r *RefreshTokensRepo) Revoke(ctx context.Context, tokenHash string) error 
 	_, err := r.db.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL`, tokenHash)
 	return err
 }
+
+func (r *RefreshTokensRepo) RevokeAllForUser(ctx context.Context, userID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE refresh_tokens
+		SET revoked_at = now()
+		WHERE user_id = $1 AND revoked_at IS NULL
+	`, userID)
+	return err
+}

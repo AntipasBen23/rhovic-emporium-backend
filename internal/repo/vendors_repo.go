@@ -16,15 +16,26 @@ func (r *VendorsRepo) GetByUserID(ctx context.Context, userID string) (domain.Ve
 	var v domain.Vendor
 	err := r.db.QueryRow(ctx, `
 		SELECT id,user_id,business_name,phone,bank_name,account_number,status,commission_override,created_at
-		FROM vendors WHERE user_id=$1
+		FROM vendors WHERE user_id=$1 AND deleted_at IS NULL
 	`, userID).Scan(&v.ID, &v.UserID, &v.BusinessName, &v.Phone, &v.BankName, &v.AccountNumber, &v.Status, &v.CommissionOverride, &v.CreatedAt)
+	return v, err
+}
+
+func (r *VendorsRepo) GetByID(ctx context.Context, id string) (domain.Vendor, error) {
+	var v domain.Vendor
+	err := r.db.QueryRow(ctx, `
+		SELECT id,user_id,business_name,phone,bank_name,account_number,status,commission_override,created_at
+		FROM vendors WHERE id=$1 AND deleted_at IS NULL
+	`, id).Scan(&v.ID, &v.UserID, &v.BusinessName, &v.Phone, &v.BankName, &v.AccountNumber, &v.Status, &v.CommissionOverride, &v.CreatedAt)
 	return v, err
 }
 
 func (r *VendorsRepo) List(ctx context.Context, limit, offset int) ([]domain.Vendor, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id,user_id,business_name,phone,bank_name,account_number,status,commission_override,created_at
-		FROM vendors ORDER BY created_at DESC
+		FROM vendors
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
 	`, limit, offset)
 	if err != nil {
@@ -74,7 +85,7 @@ func (r *VendorsRepo) CreateForUser(ctx context.Context, id, userID string, v do
 }
 
 func (r *VendorsRepo) UpdateStatus(ctx context.Context, id, status string) error {
-	_, err := r.db.Exec(ctx, `UPDATE vendors SET status=$2 WHERE id=$1`, id, status)
+	_, err := r.db.Exec(ctx, `UPDATE vendors SET status=$2 WHERE id=$1 AND deleted_at IS NULL`, id, status)
 	return err
 }
 
@@ -99,7 +110,7 @@ func (r *VendorsRepo) UpdateApplicationByUserID(ctx context.Context, userID stri
 			bank_name=$16,
 			account_number=$17,
 			status='pending'
-		WHERE user_id=$1
+		WHERE user_id=$1 AND deleted_at IS NULL
 	`,
 		userID,
 		v.FirstName, v.LastName,
@@ -108,5 +119,14 @@ func (r *VendorsRepo) UpdateApplicationByUserID(ctx context.Context, userID stri
 		v.CompanyName, v.CompanyID, v.VatID,
 		v.BankName, v.AccountIBAN,
 	)
+	return err
+}
+
+func (r *VendorsRepo) SoftDelete(ctx context.Context, id string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE vendors
+		SET deleted_at = now(), status = 'deleted'
+		WHERE id = $1 AND deleted_at IS NULL
+	`, id)
 	return err
 }
