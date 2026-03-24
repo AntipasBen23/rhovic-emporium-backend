@@ -18,19 +18,23 @@ type Config struct {
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 
-	RateLimitRPM       int
-	AuthRateLimitRPM   int
-	MaxBodyBytes       int64
-	PaystackSecretKey  string
-	PaystackPublicKey  string
-	BaseURL            string // used for callback URLs if needed
-	CORSAllowedOrigins []string
-	FrontendURL        string
-	EmailProvider      string
-	ResendAPIKey       string
-	ResendFromEmail    string
-	SendGridAPIKey     string
-	SendGridFromEmail  string
+	RateLimitRPM          int
+	AuthRateLimitRPM      int
+	AuthEmailRateLimitRPM int
+	AuthUserRateLimitRPM  int
+	MaxBodyBytes          int64
+	PaystackSecretKey     string
+	PaystackPublicKey     string
+	BaseURL               string // used for callback URLs if needed
+	CORSAllowedOrigins    []string
+	FrontendURL           string
+	EmailProvider         string
+	ResendAPIKey          string
+	ResendFromEmail       string
+	SendGridAPIKey        string
+	SendGridFromEmail     string
+	CaptchaProvider       string
+	CaptchaSecretKey      string
 }
 
 func Load() Config {
@@ -45,8 +49,10 @@ func Load() Config {
 		AccessTTL:  getDurationSeconds("JWT_ACCESS_TTL_SECONDS", 900),      // 15m
 		RefreshTTL: getDurationSeconds("JWT_REFRESH_TTL_SECONDS", 2592000), // 30d
 
-		RateLimitRPM:     getInt("RATE_LIMIT_RPM", 240),
-		AuthRateLimitRPM: getInt("AUTH_RATE_LIMIT_RPM", 30),
+		RateLimitRPM:          getInt("RATE_LIMIT_RPM", 240),
+		AuthRateLimitRPM:      getInt("AUTH_RATE_LIMIT_RPM", 30),
+		AuthEmailRateLimitRPM: getInt("AUTH_EMAIL_RATE_LIMIT_RPM", 8),
+		AuthUserRateLimitRPM:  getInt("AUTH_USER_RATE_LIMIT_RPM", 120),
 
 		MaxBodyBytes:      int64(getInt("MAX_BODY_BYTES", 1_048_576)), // 1MB
 		PaystackSecretKey: getEnv("PAYSTACK_SECRET_KEY", ""),
@@ -58,6 +64,8 @@ func Load() Config {
 		ResendFromEmail:   getEnv("RESEND_FROM_EMAIL", ""),
 		SendGridAPIKey:    getEnv("SENDGRID_API_KEY", ""),
 		SendGridFromEmail: getEnv("SENDGRID_FROM_EMAIL", ""),
+		CaptchaProvider:   strings.ToLower(getEnv("CAPTCHA_PROVIDER", "")),
+		CaptchaSecretKey:  getEnv("CAPTCHA_SECRET_KEY", ""),
 		CORSAllowedOrigins: getCSV("CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://localhost:3001",

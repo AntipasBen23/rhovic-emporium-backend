@@ -23,12 +23,22 @@ func PathLimiter(rpm int) *limiter {
 	return &limiter{rpm: rpm, hits: map[string][]time.Time{}, scope: "path", maxKeys: 10000}
 }
 
+func UserLimiter(rpm int) *limiter {
+	return &limiter{rpm: rpm, hits: map[string][]time.Time{}, scope: "user", maxKeys: 10000}
+}
+
 func RateLimit(l *limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := clientIP(r)
 			if l.scope == "path" {
 				key = key + ":" + r.URL.Path
+			} else if l.scope == "user" {
+				if auth := MustAuth(r); auth.UserID != "" {
+					key = "user:" + auth.UserID + ":" + r.URL.Path
+				} else {
+					key = key + ":" + r.URL.Path
+				}
 			}
 
 			now := time.Now()

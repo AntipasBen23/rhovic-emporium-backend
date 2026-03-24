@@ -10,6 +10,7 @@ import (
 type StackOpts struct {
 	GlobalRPM int
 	AuthRPM   int
+	UserRPM   int
 }
 
 func ApplyBase(r chi.Router, opts StackOpts) {
@@ -41,4 +42,8 @@ func ApplyBase(r chi.Router, opts StackOpts) {
 
 func ApplyAuthHardening(r chi.Router, authRPM int) {
 	r.Use(RateLimit(PathLimiter(authRPM)))
+}
+
+func ApplyUserHardening(r chi.Router, userRPM int) {
+	r.Use(RateLimit(UserLimiter(userRPM)))
 }

@@ -57,6 +57,7 @@ func main() {
 	middleware.ApplyBase(r, middleware.StackOpts{
 		GlobalRPM: cfg.RateLimitRPM,
 		AuthRPM:   cfg.AuthRateLimitRPM,
+		UserRPM:   cfg.AuthUserRateLimitRPM,
 	})
 
 	// 2. ROUTES SECOND

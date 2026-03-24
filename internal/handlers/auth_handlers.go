@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net"
 	"net/http"
 	"strings"
 
@@ -11,11 +12,12 @@ import (
 
 type AuthHandlers struct {
 	auth    *services.AuthService
+	protect *services.AuthProtectionService
 	maxBody int64
 }
 
-func NewAuthHandlers(auth *services.AuthService, maxBody int64) *AuthHandlers {
-	return &AuthHandlers{auth: auth, maxBody: maxBody}
+func NewAuthHandlers(auth *services.AuthService, protect *services.AuthProtectionService, maxBody int64) *AuthHandlers {
+	return &AuthHandlers{auth: auth, protect: protect, maxBody: maxBody}
 }
 
 type registerReq struct {
@@ -23,22 +25,23 @@ type registerReq struct {
 	Password string `json:"password"`
 	Role     string `json:"role"`
 	// Vendor profile fields (only used when role=vendor)
-	FirstName   string `json:"first_name"`
-	LastName    string `json:"last_name"`
-	ShopName    string `json:"shop_name"`
-	ShopURL     string `json:"shop_url"`
-	Phone       string `json:"phone"`
-	Street      string `json:"street"`
-	Street2     string `json:"street2"`
-	City        string `json:"city"`
-	ZipCode     string `json:"zip_code"`
-	Country     string `json:"country"`
-	State       string `json:"state"`
-	CompanyName string `json:"company_name"`
-	CompanyID   string `json:"company_id"`
-	VatID       string `json:"vat_id"`
-	BankName    string `json:"bank_name"`
-	AccountIBAN string `json:"account_iban"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	ShopName     string `json:"shop_name"`
+	ShopURL      string `json:"shop_url"`
+	Phone        string `json:"phone"`
+	Street       string `json:"street"`
+	Street2      string `json:"street2"`
+	City         string `json:"city"`
+	ZipCode      string `json:"zip_code"`
+	Country      string `json:"country"`
+	State        string `json:"state"`
+	CompanyName  string `json:"company_name"`
+	CompanyID    string `json:"company_id"`
+	VatID        string `json:"vat_id"`
+	BankName     string `json:"bank_name"`
+	AccountIBAN  string `json:"account_iban"`
+	CaptchaToken string `json:"captcha_token"`
 }
 
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +56,15 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if role == domain.RoleAdminSuper || role == domain.RoleAdminOps || role == domain.RoleAdminFin {
 		httpjson.Error(w, 403, "forbidden", "cannot self-register as admin")
+		return
+	}
+	ipAddress := requestIP(r)
+	if err := h.protect.CheckEmailAction(r.Context(), "register", req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 429, "too many requests", "please try again later")
+		return
+	}
+	if err := h.protect.VerifyCaptcha(r.Context(), "register", req.CaptchaToken, req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 403, "captcha required", err.Error())
 		return
 	}
 
@@ -84,8 +96,9 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 type loginReq struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+	CaptchaToken string `json:"captcha_token"`
 }
 
 func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
@@ -94,8 +107,18 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 400, "bad request", err.Error())
 		return
 	}
+	ipAddress := requestIP(r)
+	if err := h.protect.CheckEmailAction(r.Context(), "login", req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 429, "too many requests", "please try again later")
+		return
+	}
+	if err := h.protect.VerifyCaptcha(r.Context(), "login", req.CaptchaToken, req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 403, "captcha required", err.Error())
+		return
+	}
 	at, rt, err := h.auth.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
+		h.protect.LogLoginFailure(r.Context(), req.Email, ipAddress, r.URL.Path)
 		httpjson.Error(w, 401, "invalid credentials", "")
 		return
 	}
@@ -159,13 +182,23 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 type forgotPasswordReq struct {
-	Email string `json:"email"`
+	Email        string `json:"email"`
+	CaptchaToken string `json:"captcha_token"`
 }
 
 func (h *AuthHandlers) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req forgotPasswordReq
 	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
 		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	ipAddress := requestIP(r)
+	if err := h.protect.CheckEmailAction(r.Context(), "forgot_password", req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 429, "too many requests", "please try again later")
+		return
+	}
+	if err := h.protect.VerifyCaptcha(r.Context(), "forgot_password", req.CaptchaToken, req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 403, "captcha required", err.Error())
 		return
 	}
 	if err := h.auth.ForgotPassword(r.Context(), req.Email); err != nil {
@@ -248,4 +281,25 @@ func clearAuthCookies(w http.ResponseWriter, r *http.Request) {
 		SameSite: sameSite,
 		MaxAge:   -1,
 	})
+}
+
+func requestIP(r *http.Request) string {
+	for _, header := range []string{"CF-Connecting-IP", "X-Forwarded-For", "X-Real-IP"} {
+		value := strings.TrimSpace(r.Header.Get(header))
+		if value == "" {
+			continue
+		}
+		if header == "X-Forwarded-For" {
+			parts := strings.Split(value, ",")
+			value = strings.TrimSpace(parts[0])
+		}
+		if net.ParseIP(value) != nil {
+			return value
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

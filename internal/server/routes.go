@@ -30,6 +30,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	usersRepo := repo.NewUsersRepo(d.DB)
 	refreshRepo := repo.NewRefreshTokensRepo(d.DB)
 	resetRepo := repo.NewPasswordResetTokensRepo(d.DB)
+	securityEventsRepo := repo.NewSecurityEventsRepo(d.DB)
 	productsRepo := repo.NewProductsRepo(d.DB)
 	vendorsRepo := repo.NewVendorsRepo(d.DB)
 	settingsRepo := repo.NewSettingsRepo(d.DB)
@@ -53,9 +54,11 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		SendGridAPIKey:    d.Cfg.SendGridAPIKey,
 		SendGridFromEmail: d.Cfg.SendGridFromEmail,
 	})
+	captchaSvc := services.NewCaptchaService(d.Cfg.CaptchaProvider, d.Cfg.CaptchaSecretKey)
 
 	// services
 	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, mail, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
+	authProtectSvc := services.NewAuthProtectionService(securityEventsRepo, d.Cfg.AuthEmailRateLimitRPM, captchaSvc)
 	productsSvc := services.NewProductsService(productsRepo)
 	checkoutSvc := services.NewCheckoutService(d.DB, settingsRepo)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
@@ -64,7 +67,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo)
 
 	// handlers
-	authH := handlers.NewAuthHandlers(authSvc, d.Cfg.MaxBodyBytes)
+	authH := handlers.NewAuthHandlers(authSvc, authProtectSvc, d.Cfg.MaxBodyBytes)
 	pubH := handlers.NewPublicHandlers(productsSvc, categoriesRepo)
 	checkoutH := handlers.NewCheckoutHandlers(checkoutSvc, d.Cfg.MaxBodyBytes)
 	webhookH := handlers.NewWebhookHandlers(d.Cfg.PaystackSecretKey, paymentsSvc)
@@ -91,9 +94,10 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Post("/analytics/visits", analyticsH.TrackVisit)
 
 	// CHECKOUT / CUSTOMER ORDERS (buyer must be logged in)
-	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RequireRole("buyer")).Post("/checkout", checkoutH.Checkout)
+	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RateLimit(middleware.UserLimiter(d.Cfg.AuthUserRateLimitRPM)), middleware.RequireRole("buyer")).Post("/checkout", checkoutH.Checkout)
 	r.Route("/orders", func(or chi.Router) {
 		or.Use(middleware.JWTAuth(d.Cfg.JWTKey))
+		middleware.ApplyUserHardening(or, d.Cfg.AuthUserRateLimitRPM)
 		or.Use(middleware.RequireRole("buyer"))
 		or.Post("/checkout", checkoutH.Checkout) // compatibility alias
 		or.Get("/{id}", checkoutH.GetOrder)
@@ -108,6 +112,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// VENDOR
 	r.Route("/vendor", func(vr chi.Router) {
 		vr.Use(middleware.JWTAuth(d.Cfg.JWTKey))
+		middleware.ApplyUserHardening(vr, d.Cfg.AuthUserRateLimitRPM)
 		vr.Get("/application", vendorH.Application)
 		vr.Post("/apply", vendorH.Apply)
 		vr.Post("/products", vendorH.CreateProduct)
@@ -123,6 +128,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// ADMIN
 	r.Route("/admin", func(ad chi.Router) {
 		ad.Use(middleware.JWTAuth(d.Cfg.JWTKey))
+		middleware.ApplyUserHardening(ad, d.Cfg.AuthUserRateLimitRPM)
 		ad.Use(middleware.RequireRole("super_admin", "ops_admin", "finance_admin"))
 
 		ad.Get("/metrics", adminH.Metrics)
