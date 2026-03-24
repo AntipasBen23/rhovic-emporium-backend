@@ -63,6 +63,25 @@ func (h *AdminHandlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, 200, out)
 }
 
+func (h *AdminHandlers) ListSecurityEvents(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	eventType := r.URL.Query().Get("event_type")
+	search := r.URL.Query().Get("search")
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	out, err := h.admin.ListSecurityEvents(r.Context(), eventType, search, limit, offset)
+	if err != nil {
+		httpjson.Error(w, 500, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, out)
+}
+
 func (h *AdminHandlers) LogoutUser(w http.ResponseWriter, r *http.Request) {
 	u := middleware.MustAuth(r)
 	id := chi.URLParam(r, "id")

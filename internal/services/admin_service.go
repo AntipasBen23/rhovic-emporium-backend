@@ -17,6 +17,7 @@ type AdminService struct {
 	metrics  *repo.AdminMetricsRepo
 	users    *repo.UsersRepo
 	refresh  *repo.RefreshTokensRepo
+	security *repo.SecurityEventsRepo
 	products *repo.ProductsRepo
 	vendors  *repo.VendorsRepo
 	settings *repo.SettingsRepo
@@ -26,8 +27,8 @@ type AdminService struct {
 	ledger   *repo.LedgerRepo
 }
 
-func NewAdminService(pool *pgxpool.Pool, metrics *repo.AdminMetricsRepo, users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, products *repo.ProductsRepo, vendors *repo.VendorsRepo, settings *repo.SettingsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo, logs *repo.AdminLogsRepo, ledger *repo.LedgerRepo) *AdminService {
-	return &AdminService{pool: pool, metrics: metrics, users: users, refresh: refresh, products: products, vendors: vendors, settings: settings, payouts: payouts, disputes: disputes, logs: logs, ledger: ledger}
+func NewAdminService(pool *pgxpool.Pool, metrics *repo.AdminMetricsRepo, users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, security *repo.SecurityEventsRepo, products *repo.ProductsRepo, vendors *repo.VendorsRepo, settings *repo.SettingsRepo, payouts *repo.PayoutsRepo, disputes *repo.DisputesRepo, logs *repo.AdminLogsRepo, ledger *repo.LedgerRepo) *AdminService {
+	return &AdminService{pool: pool, metrics: metrics, users: users, refresh: refresh, security: security, products: products, vendors: vendors, settings: settings, payouts: payouts, disputes: disputes, logs: logs, ledger: ledger}
 }
 
 func (s *AdminService) Metrics(ctx context.Context) (map[string]any, error) {
@@ -36,6 +37,10 @@ func (s *AdminService) Metrics(ctx context.Context) (map[string]any, error) {
 
 func (s *AdminService) ListUsers(ctx context.Context, search, role string, includeDeleted bool, limit, offset int) (repo.AdminUserListResult, error) {
 	return s.users.AdminList(ctx, search, role, includeDeleted, limit, offset)
+}
+
+func (s *AdminService) ListSecurityEvents(ctx context.Context, eventType, search string, limit, offset int) (repo.SecurityEventListResult, error) {
+	return s.security.List(ctx, eventType, search, limit, offset)
 }
 
 func (s *AdminService) LogoutUser(ctx context.Context, adminID, userID string) error {

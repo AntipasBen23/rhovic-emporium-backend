@@ -63,7 +63,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	checkoutSvc := services.NewCheckoutService(d.DB, settingsRepo)
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
-	adminSvc := services.NewAdminService(d.DB, metricsRepo, usersRepo, refreshRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
+	adminSvc := services.NewAdminService(d.DB, metricsRepo, usersRepo, refreshRepo, securityEventsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
 	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo)
 
 	// handlers
@@ -133,6 +133,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 		ad.Get("/metrics", adminH.Metrics)
 		ad.Get("/users", adminH.ListUsers)
+		ad.Get("/security-events", adminH.ListSecurityEvents)
 		ad.Post("/users/{id}/logout", adminH.LogoutUser)
 		ad.Delete("/users/{id}", adminH.DeleteUser)
 		ad.Get("/vendors", adminH.ListVendors)
