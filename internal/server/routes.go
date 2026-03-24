@@ -41,6 +41,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	adminLogsRepo := repo.NewAdminLogsRepo()
 	metricsRepo := repo.NewAdminMetricsRepo(d.DB)
 	categoriesRepo := repo.NewCategoriesRepo(d.DB)
+	visitAnalyticsRepo := repo.NewVisitAnalyticsRepo(d.DB)
 
 	// external
 	ps := paystack.New(d.Cfg.PaystackSecretKey)
@@ -60,6 +61,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
 	adminSvc := services.NewAdminService(d.DB, metricsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
+	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo)
 
 	// handlers
 	authH := handlers.NewAuthHandlers(authSvc, d.Cfg.MaxBodyBytes)
@@ -69,6 +71,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	vendorH := handlers.NewVendorHandlers(vendorSvc, d.Cfg.MaxBodyBytes)
 	vendorOrdersH := handlers.NewVendorOrdersHandlers(checkoutSvc)
 	adminH := handlers.NewAdminHandlers(adminSvc, checkoutSvc, productsRepo, vendorsRepo, payoutsRepo, disputesRepo)
+	analyticsH := handlers.NewAnalyticsHandlers(visitAnalyticsSvc)
 
 	// AUTH (hard rate limit)
 	r.Route("/auth", func(ar chi.Router) {
@@ -85,6 +88,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Get("/products", pubH.ListProducts)
 	r.Get("/products/{id}", pubH.GetProduct)
 	r.Get("/categories", pubH.ListCategories)
+	r.Post("/analytics/visits", analyticsH.TrackVisit)
 
 	// CHECKOUT / CUSTOMER ORDERS (buyer must be logged in)
 	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RequireRole("buyer")).Post("/checkout", checkoutH.Checkout)
