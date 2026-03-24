@@ -46,18 +46,21 @@ func (h *AdminHandlers) Metrics(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	search := r.URL.Query().Get("search")
+	role := r.URL.Query().Get("role")
+	includeDeleted := r.URL.Query().Get("include_deleted") == "true"
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	items, err := h.admin.ListUsers(r.Context(), limit, offset)
+	out, err := h.admin.ListUsers(r.Context(), search, role, includeDeleted, limit, offset)
 	if err != nil {
 		httpjson.Error(w, 500, "failed", err.Error())
 		return
 	}
-	httpjson.Write(w, 200, map[string]any{"items": items})
+	httpjson.Write(w, 200, out)
 }
 
 func (h *AdminHandlers) LogoutUser(w http.ResponseWriter, r *http.Request) {

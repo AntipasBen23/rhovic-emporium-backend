@@ -34,8 +34,8 @@ func (s *AdminService) Metrics(ctx context.Context) (map[string]any, error) {
 	return s.metrics.Metrics(ctx)
 }
 
-func (s *AdminService) ListUsers(ctx context.Context, limit, offset int) ([]repo.AdminUserListItem, error) {
-	return s.users.AdminList(ctx, limit, offset)
+func (s *AdminService) ListUsers(ctx context.Context, search, role string, includeDeleted bool, limit, offset int) (repo.AdminUserListResult, error) {
+	return s.users.AdminList(ctx, search, role, includeDeleted, limit, offset)
 }
 
 func (s *AdminService) LogoutUser(ctx context.Context, adminID, userID string) error {

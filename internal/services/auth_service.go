@@ -59,6 +59,9 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
 		return "", "", domain.ErrUnauthorized
 	}
+	if err := s.users.UpdateLastLogin(ctx, u.ID); err != nil {
+		return "", "", err
+	}
 	return s.issueAndStoreRefresh(ctx, u.ID, string(u.Role))
 }
 

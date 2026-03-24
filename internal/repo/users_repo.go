@@ -19,10 +19,18 @@ type AdminUserListItem struct {
 	Email           string     `json:"email"`
 	Role            string     `json:"role"`
 	CreatedAt       time.Time  `json:"created_at"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
+	ActiveSessions  int64      `json:"active_sessions"`
 	VendorID        *string    `json:"vendor_id,omitempty"`
 	VendorName      *string    `json:"vendor_name,omitempty"`
 	VendorStatus    *string    `json:"vendor_status,omitempty"`
 	VendorDeletedAt *time.Time `json:"vendor_deleted_at,omitempty"`
+}
+
+type AdminUserListResult struct {
+	Items []AdminUserListItem `json:"items"`
+	Total int64               `json:"total"`
 }
 
 func NewUsersRepo(db *pgxpool.Pool) *UsersRepo {
@@ -98,25 +106,50 @@ func (r *UsersRepo) UpdatePassword(ctx context.Context, id, passwordHash string)
 	return err
 }
 
-func (r *UsersRepo) AdminList(ctx context.Context, limit, offset int) ([]AdminUserListItem, error) {
+func (r *UsersRepo) AdminList(ctx context.Context, search, role string, includeDeleted bool, limit, offset int) (AdminUserListResult, error) {
+	search = "%" + search + "%"
+	var total int64
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM users u
+		LEFT JOIN vendors v ON v.user_id = u.id
+		WHERE ($1 = '%%' OR u.email ILIKE $1 OR COALESCE(v.business_name, '') ILIKE $1)
+		  AND ($2 = '' OR u.role = $2)
+		  AND ($3 OR u.deleted_at IS NULL)
+	`, search, role, includeDeleted).Scan(&total)
+	if err != nil {
+		return AdminUserListResult{}, err
+	}
+
 	rows, err := r.db.Query(ctx, `
 		SELECT
 			u.id,
 			u.email,
 			u.role,
 			u.created_at,
+			u.deleted_at,
+			u.last_login_at,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM refresh_tokens rt
+				WHERE rt.user_id = u.id
+				  AND rt.revoked_at IS NULL
+				  AND rt.expires_at > now()
+			), 0) AS active_sessions,
 			v.id,
 			v.business_name,
 			v.status,
 			v.deleted_at
 		FROM users u
 		LEFT JOIN vendors v ON v.user_id = u.id
-		WHERE u.deleted_at IS NULL
-		ORDER BY u.created_at DESC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+		WHERE ($1 = '%%' OR u.email ILIKE $1 OR COALESCE(v.business_name, '') ILIKE $1)
+		  AND ($2 = '' OR u.role = $2)
+		  AND ($3 OR u.deleted_at IS NULL)
+		ORDER BY COALESCE(u.deleted_at, u.created_at) DESC, u.created_at DESC
+		LIMIT $4 OFFSET $5
+	`, search, role, includeDeleted, limit, offset)
 	if err != nil {
-		return nil, err
+		return AdminUserListResult{}, err
 	}
 	defer rows.Close()
 
@@ -128,16 +161,22 @@ func (r *UsersRepo) AdminList(ctx context.Context, limit, offset int) ([]AdminUs
 			&item.Email,
 			&item.Role,
 			&item.CreatedAt,
+			&item.DeletedAt,
+			&item.LastLoginAt,
+			&item.ActiveSessions,
 			&item.VendorID,
 			&item.VendorName,
 			&item.VendorStatus,
 			&item.VendorDeletedAt,
 		); err != nil {
-			return nil, err
+			return AdminUserListResult{}, err
 		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return AdminUserListResult{}, err
+	}
+	return AdminUserListResult{Items: out, Total: total}, nil
 }
 
 func (r *UsersRepo) SoftDelete(ctx context.Context, userID string) error {
@@ -155,5 +194,14 @@ func (r *UsersRepo) UpdateRole(ctx context.Context, userID, role string) error {
 		SET role = $2
 		WHERE id = $1 AND deleted_at IS NULL
 	`, userID, role)
+	return err
+}
+
+func (r *UsersRepo) UpdateLastLogin(ctx context.Context, userID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET last_login_at = now()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, userID)
 	return err
 }
