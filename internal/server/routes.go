@@ -43,6 +43,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	metricsRepo := repo.NewAdminMetricsRepo(d.DB)
 	categoriesRepo := repo.NewCategoriesRepo(d.DB)
 	visitAnalyticsRepo := repo.NewVisitAnalyticsRepo(d.DB)
+	supportRepo := repo.NewSupportRepo(d.DB)
 
 	// external
 	ps := paystack.New(d.Cfg.PaystackSecretKey)
@@ -65,6 +66,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
 	adminSvc := services.NewAdminService(d.DB, metricsRepo, usersRepo, refreshRepo, securityEventsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
 	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo)
+	supportSvc := services.NewSupportService(d.DB, supportRepo, adminLogsRepo)
 
 	// handlers
 	authH := handlers.NewAuthHandlers(authSvc, authProtectSvc, d.Cfg.MaxBodyBytes)
@@ -75,6 +77,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	vendorOrdersH := handlers.NewVendorOrdersHandlers(checkoutSvc)
 	adminH := handlers.NewAdminHandlers(adminSvc, checkoutSvc, productsRepo, vendorsRepo, payoutsRepo, disputesRepo)
 	analyticsH := handlers.NewAnalyticsHandlers(visitAnalyticsSvc)
+	supportH := handlers.NewSupportHandlers(supportSvc, d.Cfg.MaxBodyBytes)
 
 	// AUTH (hard rate limit)
 	r.Route("/auth", func(ar chi.Router) {
@@ -105,6 +108,15 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		or.Get("/{id}/payment-proofs/{proofID}", checkoutH.DownloadPaymentProof)
 	})
 	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RequireRole("buyer")).Get("/my-orders", checkoutH.ListMyOrders)
+	r.Route("/support", func(sr chi.Router) {
+		sr.Use(middleware.JWTAuth(d.Cfg.JWTKey))
+		middleware.ApplyUserHardening(sr, d.Cfg.AuthUserRateLimitRPM)
+		sr.Use(middleware.RequireRole("buyer"))
+		sr.Get("/threads", supportH.ListCustomerThreads)
+		sr.Post("/threads", supportH.CreateCustomerThread)
+		sr.Get("/threads/{id}", supportH.GetCustomerThread)
+		sr.Post("/threads/{id}/messages", supportH.AddCustomerMessage)
+	})
 
 	// PAYSTACK WEBHOOK (public, signature verified)
 	r.Post("/payments/webhook", webhookH.PaystackWebhook)
@@ -160,5 +172,9 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ad.Get("/payment-proofs/{proofID}", adminH.DownloadPaymentProof)
 		ad.Get("/vendor-payouts", adminH.ListVendorPayouts)
 		ad.Post("/vendor-payouts/{id}/mark-paid", adminH.MarkVendorPayoutPaid)
+		ad.Get("/support/threads", supportH.ListAdminThreads)
+		ad.Get("/support/threads/{id}", supportH.GetAdminThread)
+		ad.Post("/support/threads/{id}/messages", supportH.AddAdminMessage)
+		ad.Post("/support/threads/{id}/close", supportH.CloseAdminThread)
 	})
 }
