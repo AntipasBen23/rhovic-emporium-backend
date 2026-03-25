@@ -126,7 +126,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 401, "invalid credentials", "")
 		return
 	}
-	h.protect.ClearLoginFailures(req.Email)
+	h.protect.LogLoginSuccess(r.Context(), req.Email, "", ipAddress, r.URL.Path)
 	setAuthCookies(w, r, at, rt)
 	httpjson.Write(w, 200, map[string]any{"access_token": at, "refresh_token": rt})
 }

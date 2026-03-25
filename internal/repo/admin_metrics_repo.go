@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -14,6 +15,7 @@ func (r *AdminMetricsRepo) Metrics(ctx context.Context) (map[string]any, error) 
 	var totalVendors, pendingVendors, totalProducts, publishedProducts, totalOrders, failedPayments int64
 	var monthlyGMV, totalCommission, pendingPayoutAmount int64
 	var todayPageViews, todayUniqueVisitors int64
+	var recentSecurityEvents, recentLoginFailures, recentLockouts int64
 
 	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM vendors`).Scan(&totalVendors)
 	if err != nil {
@@ -38,6 +40,23 @@ func (r *AdminMetricsRepo) Metrics(ctx context.Context) (map[string]any, error) 
 		FROM page_visits
 		WHERE created_at >= date_trunc('day', now())
 	`).Scan(&todayPageViews, &todayUniqueVisitors)
+	_ = r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM security_events
+		WHERE created_at >= now() - interval '24 hour'
+	`).Scan(&recentSecurityEvents)
+	_ = r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM security_events
+		WHERE event_type='login_failed'
+		  AND created_at >= now() - interval '24 hour'
+	`).Scan(&recentLoginFailures)
+	_ = r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM security_events
+		WHERE event_type IN ('login_locked','login_blocked')
+		  AND created_at >= now() - interval '24 hour'
+	`).Scan(&recentLockouts)
 
 	dailyVisits := make([]map[string]any, 0, 7)
 	dailyRows, err := r.db.Query(ctx, `
@@ -107,19 +126,48 @@ func (r *AdminMetricsRepo) Metrics(ctx context.Context) (map[string]any, error) 
 		}
 	}
 
+	recentSecurity := make([]map[string]any, 0, 5)
+	securityRows, err := r.db.Query(ctx, `
+		SELECT event_type, COALESCE(NULLIF(email, ''), principal_key, 'unknown'), COALESCE(NULLIF(ip_address, ''), '-'), created_at
+		FROM security_events
+		ORDER BY created_at DESC
+		LIMIT 5
+	`)
+	if err == nil {
+		defer securityRows.Close()
+		for securityRows.Next() {
+			var eventType, principal, ipAddress string
+			var createdAt time.Time
+			if scanErr := securityRows.Scan(&eventType, &principal, &ipAddress, &createdAt); scanErr != nil {
+				recentSecurity = []map[string]any{}
+				break
+			}
+			recentSecurity = append(recentSecurity, map[string]any{
+				"event_type": eventType,
+				"principal":  principal,
+				"ip_address": ipAddress,
+				"created_at": createdAt,
+			})
+		}
+	}
+
 	return map[string]any{
-		"total_vendors":         totalVendors,
-		"pending_vendors":       pendingVendors,
-		"total_products":        totalProducts,
-		"published_products":    publishedProducts,
-		"total_orders":          totalOrders,
-		"monthly_gmv":           monthlyGMV,
-		"total_commission":      totalCommission,
-		"pending_payout_amount": pendingPayoutAmount,
-		"failed_payments":       failedPayments,
-		"today_page_views":      todayPageViews,
-		"today_unique_visitors": todayUniqueVisitors,
-		"daily_visits":          dailyVisits,
-		"top_locations":         topLocations,
+		"total_vendors":          totalVendors,
+		"pending_vendors":        pendingVendors,
+		"total_products":         totalProducts,
+		"published_products":     publishedProducts,
+		"total_orders":           totalOrders,
+		"monthly_gmv":            monthlyGMV,
+		"total_commission":       totalCommission,
+		"pending_payout_amount":  pendingPayoutAmount,
+		"failed_payments":        failedPayments,
+		"today_page_views":       todayPageViews,
+		"today_unique_visitors":  todayUniqueVisitors,
+		"recent_security_events": recentSecurityEvents,
+		"recent_login_failures":  recentLoginFailures,
+		"recent_lockouts":        recentLockouts,
+		"daily_visits":           dailyVisits,
+		"top_locations":          topLocations,
+		"recent_security":        recentSecurity,
 	}, nil
 }

@@ -19,22 +19,9 @@ type keyedLimiter struct {
 	maxKeys int
 }
 
-type failureTracker struct {
-	mu      sync.Mutex
-	hits    map[string][]time.Time
-	maxKeys int
-}
-
 func newKeyedLimiter(rpm int) *keyedLimiter {
 	return &keyedLimiter{
 		rpm:     rpm,
-		hits:    map[string][]time.Time{},
-		maxKeys: 10000,
-	}
-}
-
-func newFailureTracker() *failureTracker {
-	return &failureTracker{
 		hits:    map[string][]time.Time{},
 		maxKeys: 10000,
 	}
@@ -78,7 +65,6 @@ func (l *keyedLimiter) Allow(key string) bool {
 
 type AuthProtectionService struct {
 	emailLimiter *keyedLimiter
-	failures     *failureTracker
 	events       *repo.SecurityEventsRepo
 	captcha      *CaptchaService
 }
@@ -86,7 +72,6 @@ type AuthProtectionService struct {
 func NewAuthProtectionService(events *repo.SecurityEventsRepo, emailRPM int, captcha *CaptchaService) *AuthProtectionService {
 	return &AuthProtectionService{
 		emailLimiter: newKeyedLimiter(emailRPM),
-		failures:     newFailureTracker(),
 		events:       events,
 		captcha:      captcha,
 	}
@@ -120,79 +105,41 @@ func (s *AuthProtectionService) VerifyCaptcha(ctx context.Context, action, token
 func (s *AuthProtectionService) LogLoginFailure(ctx context.Context, email, ipAddress, path string) {
 	key := strings.ToLower(strings.TrimSpace(email))
 	s.logEvent(ctx, "login_failed", key, key, "", ipAddress, path, nil)
-	if key == "" || s.failures == nil {
+	if key == "" || s.events == nil {
 		return
 	}
-	s.failures.mu.Lock()
-	defer s.failures.mu.Unlock()
-
-	now := time.Now()
-	cutoff := now.Add(-10 * time.Minute)
-	times := s.failures.hits[key]
-	n := 0
-	for _, t := range times {
-		if t.After(cutoff) {
-			times[n] = t
-			n++
-		}
-	}
-	times = times[:n]
-	times = append(times, now)
-	s.failures.hits[key] = times
-	if len(times) >= 5 {
+	count, err := s.events.CountLoginFailuresSinceLastSuccess(ctx, key, time.Now().Add(-10*time.Minute))
+	if err == nil && count >= 5 {
 		s.logEvent(ctx, "login_locked", key, key, "", ipAddress, path, map[string]any{
-			"failed_attempts": len(times),
+			"failed_attempts": count,
 			"window_minutes":  10,
 			"lock_minutes":    15,
 		})
-	}
-	if len(s.failures.hits) > s.failures.maxKeys {
-		for existingKey, values := range s.failures.hits {
-			if len(values) == 0 {
-				delete(s.failures.hits, existingKey)
-			}
-		}
 	}
 }
 
 func (s *AuthProtectionService) CheckLoginLock(ctx context.Context, email, ipAddress, path string) error {
 	key := strings.ToLower(strings.TrimSpace(email))
-	if key == "" || s.failures == nil {
+	if key == "" || s.events == nil {
 		return nil
 	}
-	s.failures.mu.Lock()
-	defer s.failures.mu.Unlock()
-
-	now := time.Now()
-	cutoff := now.Add(-15 * time.Minute)
-	times := s.failures.hits[key]
-	n := 0
-	for _, t := range times {
-		if t.After(cutoff) {
-			times[n] = t
-			n++
-		}
-	}
-	times = times[:n]
-	s.failures.hits[key] = times
-	if len(times) < 5 {
+	count, err := s.events.CountLoginFailuresSinceLastSuccess(ctx, key, time.Now().Add(-15*time.Minute))
+	if err != nil || count < 5 {
 		return nil
 	}
 	s.logEvent(ctx, "login_blocked", key, key, "", ipAddress, path, map[string]any{
-		"failed_attempts": len(times),
+		"failed_attempts": count,
 		"lock_minutes":    15,
 	})
 	return domain.ErrTooMany
 }
 
-func (s *AuthProtectionService) ClearLoginFailures(email string) {
+func (s *AuthProtectionService) LogLoginSuccess(ctx context.Context, email, userID, ipAddress, path string) {
 	key := strings.ToLower(strings.TrimSpace(email))
-	if key == "" || s.failures == nil {
+	if key == "" {
 		return
 	}
-	s.failures.mu.Lock()
-	defer s.failures.mu.Unlock()
-	delete(s.failures.hits, key)
+	s.logEvent(ctx, "login_success", key, key, userID, ipAddress, path, nil)
 }
 
 func (s *AuthProtectionService) logEvent(ctx context.Context, eventType, principalKey, email, userID, ipAddress, path string, details map[string]any) {

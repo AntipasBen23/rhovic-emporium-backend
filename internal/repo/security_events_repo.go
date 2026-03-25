@@ -82,3 +82,58 @@ func (r *SecurityEventsRepo) List(ctx context.Context, eventType, search string,
 	}
 	return SecurityEventListResult{Items: items, Total: total}, nil
 }
+
+func (r *SecurityEventsRepo) CountByTypesSince(ctx context.Context, eventTypes []string, since time.Time) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM security_events
+		WHERE event_type = ANY($1)
+		  AND created_at >= $2
+	`, eventTypes, since).Scan(&count)
+	return count, err
+}
+
+func (r *SecurityEventsRepo) Recent(ctx context.Context, limit int) ([]SecurityEventListItem, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, event_type, principal_key, email, user_id, ip_address, path, details_json, created_at
+		FROM security_events
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []SecurityEventListItem
+	for rows.Next() {
+		var item SecurityEventListItem
+		if err := rows.Scan(&item.ID, &item.EventType, &item.PrincipalKey, &item.Email, &item.UserID, &item.IPAddress, &item.Path, &item.DetailsJSON, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *SecurityEventsRepo) CountLoginFailuresSinceLastSuccess(ctx context.Context, email string, since time.Time) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(ctx, `
+		WITH last_success AS (
+			SELECT MAX(created_at) AS created_at
+			FROM security_events
+			WHERE email = $1
+			  AND event_type = 'login_success'
+		)
+		SELECT COUNT(*)
+		FROM security_events
+		WHERE email = $1
+		  AND event_type = 'login_failed'
+		  AND created_at >= GREATEST(
+			$2,
+			COALESCE((SELECT created_at FROM last_success), $2)
+		  )
+	`, strings.ToLower(strings.TrimSpace(email)), since).Scan(&count)
+	return count, err
+}
