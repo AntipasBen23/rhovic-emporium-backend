@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -92,7 +93,12 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, 400, "registration failed", err.Error())
 		return
 	}
-	httpjson.Write(w, 201, map[string]any{"user_id": id})
+	httpjson.Write(w, 201, map[string]any{
+		"user_id": uidOrEmpty(id),
+		"email": req.Email,
+		"verification_required": true,
+		"expires_in_minutes": 10,
+	})
 }
 
 type loginReq struct {
@@ -122,6 +128,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	at, rt, err := h.auth.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
+		if errors.Is(err, domain.ErrEmailUnverified) {
+			httpjson.Error(w, 403, "email verification required", "please verify your email with the code we sent")
+			return
+		}
 		h.protect.LogLoginFailure(r.Context(), req.Email, ipAddress, r.URL.Path)
 		httpjson.Error(w, 401, "invalid credentials", "")
 		return
@@ -231,6 +241,51 @@ func (h *AuthHandlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
 
+type verifyEmailReq struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+func (h *AuthHandlers) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req verifyEmailReq
+	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
+		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	if err := h.auth.VerifyEmailOTP(r.Context(), req.Email, req.Code); err != nil {
+		httpjson.Error(w, 400, "verification failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
+type resendVerificationReq struct {
+	Email        string `json:"email"`
+	CaptchaToken string `json:"captcha_token"`
+}
+
+func (h *AuthHandlers) ResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req resendVerificationReq
+	if err := httpjson.DecodeStrict(r, &req, h.maxBody); err != nil {
+		httpjson.Error(w, 400, "bad request", err.Error())
+		return
+	}
+	ipAddress := requestIP(r)
+	if err := h.protect.CheckEmailAction(r.Context(), "resend_verification", req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 429, "too many requests", "please try again later")
+		return
+	}
+	if err := h.protect.VerifyCaptcha(r.Context(), "resend_verification", req.CaptchaToken, req.Email, ipAddress, r.URL.Path); err != nil {
+		httpjson.Error(w, 403, "captcha required", err.Error())
+		return
+	}
+	if err := h.auth.ResendEmailOTP(r.Context(), req.Email); err != nil {
+		httpjson.Error(w, 400, "resend failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true, "expires_in_minutes": 10})
+}
+
 func cookieSecure(r *http.Request) bool {
 	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
@@ -307,4 +362,8 @@ func requestIP(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+func uidOrEmpty(id string) string {
+	return strings.TrimSpace(id)
 }

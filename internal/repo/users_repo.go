@@ -39,9 +39,9 @@ func NewUsersRepo(db *pgxpool.Pool) *UsersRepo {
 
 func (r *UsersRepo) Create(ctx context.Context, u domain.User) error {
 	_, err := r.db.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role, created_at)
-		VALUES ($1, $2, $3, $4, NOW())
-	`, u.ID, u.Email, u.PasswordHash, u.Role)
+		INSERT INTO users (id, email, password_hash, role, email_verified_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`, u.ID, u.Email, u.PasswordHash, u.Role, u.EmailVerifiedAt)
 	return err
 }
 
@@ -80,20 +80,20 @@ func (r *UsersRepo) CreateVendorProfile(ctx context.Context, userID string, v do
 func (r *UsersRepo) GetByEmail(ctx context.Context, email string) (domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, role, created_at
+		SELECT id, email, password_hash, role, email_verified_at, created_at
 		FROM users
 		WHERE email = $1 AND deleted_at IS NULL
-	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt)
+	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.EmailVerifiedAt, &u.CreatedAt)
 	return u, err
 }
 
 func (r *UsersRepo) GetByID(ctx context.Context, id string) (domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, role, created_at
+		SELECT id, email, password_hash, role, email_verified_at, created_at
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.EmailVerifiedAt, &u.CreatedAt)
 	return u, err
 }
 
@@ -202,6 +202,15 @@ func (r *UsersRepo) UpdateLastLogin(ctx context.Context, userID string) error {
 		UPDATE users
 		SET last_login_at = now()
 		WHERE id = $1 AND deleted_at IS NULL
+	`, userID)
+	return err
+}
+
+func (r *UsersRepo) MarkEmailVerified(ctx context.Context, userID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET email_verified_at = now()
+		WHERE id = $1 AND deleted_at IS NULL AND email_verified_at IS NULL
 	`, userID)
 	return err
 }

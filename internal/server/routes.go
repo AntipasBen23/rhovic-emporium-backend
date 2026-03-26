@@ -30,6 +30,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	usersRepo := repo.NewUsersRepo(d.DB)
 	refreshRepo := repo.NewRefreshTokensRepo(d.DB)
 	resetRepo := repo.NewPasswordResetTokensRepo(d.DB)
+	emailVerificationRepo := repo.NewEmailVerificationTokensRepo(d.DB)
 	securityEventsRepo := repo.NewSecurityEventsRepo(d.DB)
 	productsRepo := repo.NewProductsRepo(d.DB)
 	vendorsRepo := repo.NewVendorsRepo(d.DB)
@@ -58,7 +59,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	captchaSvc := services.NewCaptchaService(d.Cfg.CaptchaProvider, d.Cfg.CaptchaSecretKey)
 
 	// services
-	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, mail, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
+	authSvc := services.NewAuthService(usersRepo, refreshRepo, resetRepo, emailVerificationRepo, mail, d.Cfg.JWTKey, d.Cfg.AccessTTL, d.Cfg.RefreshTTL)
 	authProtectSvc := services.NewAuthProtectionService(securityEventsRepo, d.Cfg.AuthEmailRateLimitRPM, captchaSvc)
 	productsSvc := services.NewProductsService(productsRepo)
 	checkoutSvc := services.NewCheckoutService(d.DB, settingsRepo)
@@ -88,6 +89,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ar.Post("/logout", authH.Logout)
 		ar.Post("/forgot-password", authH.ForgotPassword)
 		ar.Post("/reset-password", authH.ResetPassword)
+		ar.Post("/verify-email", authH.VerifyEmail)
+		ar.Post("/resend-verification", authH.ResendVerification)
 	})
 
 	// PUBLIC

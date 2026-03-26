@@ -14,6 +14,7 @@ import (
 
 type Sender interface {
 	SendPasswordReset(ctx context.Context, to, token string) error
+	SendSignupOTP(ctx context.Context, to, code string) error
 }
 
 type Config struct {
@@ -54,6 +55,32 @@ func (c *Client) SendPasswordReset(ctx context.Context, to, token string) error 
 	html := fmt.Sprintf(
 		"<p>We received a password reset request for your RHOVIC account.</p><p><a href=\"%s\">Reset password</a></p><p>This link expires in 30 minutes.</p>",
 		resetURL,
+	)
+
+	switch provider {
+	case "resend":
+		return c.sendResend(ctx, to, subject, text, html)
+	case "sendgrid":
+		return c.sendSendGrid(ctx, to, subject, text, html)
+	default:
+		return fmt.Errorf("unsupported email provider: %s", provider)
+	}
+}
+
+func (c *Client) SendSignupOTP(ctx context.Context, to, code string) error {
+	provider := strings.ToLower(strings.TrimSpace(c.cfg.Provider))
+	if provider == "" {
+		return fmt.Errorf("email provider not configured")
+	}
+	if strings.TrimSpace(to) == "" || strings.TrimSpace(code) == "" {
+		return fmt.Errorf("missing recipient or code")
+	}
+
+	subject := "Verify your RHOVIC account"
+	text := "Your RHOVIC verification code is: " + code + "\nThis code expires in 10 minutes."
+	html := fmt.Sprintf(
+		"<p>Welcome to RHOVIC.</p><p>Your verification code is <strong style=\"font-size:24px;letter-spacing:4px;\">%s</strong>.</p><p>This code expires in 10 minutes.</p>",
+		code,
 	)
 
 	switch provider {

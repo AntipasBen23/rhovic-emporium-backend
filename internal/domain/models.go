@@ -37,6 +37,7 @@ type User struct {
 	Email        string
 	PasswordHash string
 	Role         Role
+	EmailVerifiedAt *time.Time
 	CreatedAt    time.Time
 }
 

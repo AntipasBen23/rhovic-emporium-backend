@@ -12,4 +12,5 @@ var (
 	ErrCaptchaFailed  = errors.New("captcha verification failed")
 	ErrInsufficient   = errors.New("insufficient balance")
 	ErrInvalidWebhook = errors.New("invalid webhook")
+	ErrEmailUnverified = errors.New("email not verified")
 )

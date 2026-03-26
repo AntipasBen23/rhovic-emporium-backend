@@ -1,8 +1,10 @@
 package services
 
 import (
+	"crypto/rand"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"regexp"
 	"time"
@@ -21,15 +23,16 @@ type AuthService struct {
 	users      *repo.UsersRepo
 	refresh    *repo.RefreshTokensRepo
 	resets     *repo.PasswordResetTokensRepo
+	verifications *repo.EmailVerificationTokensRepo
 	mailer     mailer.Sender
 	jwtKey     []byte
 	access     time.Duration
 	refreshTTL time.Duration
 }
 
-func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, sender mailer.Sender, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
+func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, verifications *repo.EmailVerificationTokensRepo, sender mailer.Sender, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
 	return &AuthService{
-		users: users, refresh: refresh, resets: resets, mailer: sender,
+		users: users, refresh: refresh, resets: resets, verifications: verifications, mailer: sender,
 		jwtKey: []byte(jwtSecret), access: accessTTL, refreshTTL: refreshTTL,
 	}
 }
@@ -51,6 +54,9 @@ func (s *AuthService) Register(ctx context.Context, email, password string, role
 			return uid, err
 		}
 	}
+	if err := s.sendVerificationOTP(ctx, uid, email); err != nil {
+		return uid, err
+	}
 	return uid, nil
 }
 
@@ -58,6 +64,9 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 	u, err := s.users.GetByEmail(ctx, email)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
 		return "", "", domain.ErrUnauthorized
+	}
+	if u.EmailVerifiedAt == nil {
+		return "", "", domain.ErrEmailUnverified
 	}
 	if err := s.users.UpdateLastLogin(ctx, u.ID); err != nil {
 		return "", "", err
@@ -146,6 +155,64 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	return s.users.UpdatePassword(ctx, userID, string(hash))
 }
 
+func (s *AuthService) VerifyEmailOTP(ctx context.Context, email, code string) error {
+	if !validEmail(email) || !validOTP(code) {
+		return domain.ErrInvalidInput
+	}
+	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return domain.ErrInvalidInput
+	}
+	if u.EmailVerifiedAt != nil {
+		return nil
+	}
+	if err := s.verifications.Consume(ctx, u.ID, util.SHA256Hex(code)); err != nil {
+		return domain.ErrInvalidInput
+	}
+	return s.users.MarkEmailVerified(ctx, u.ID)
+}
+
+func (s *AuthService) ResendEmailOTP(ctx context.Context, email string) error {
+	if !validEmail(email) {
+		return domain.ErrInvalidInput
+	}
+	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if u.EmailVerifiedAt != nil {
+		return nil
+	}
+	return s.sendVerificationOTP(ctx, u.ID, u.Email)
+}
+
+func (s *AuthService) sendVerificationOTP(ctx context.Context, userID, email string) error {
+	if s.verifications == nil {
+		return errors.New("email verification store not configured")
+	}
+	if s.mailer == nil {
+		return errors.New("email provider not configured")
+	}
+	code, err := generateOTPCode(6)
+	if err != nil {
+		return err
+	}
+	if err := s.verifications.RevokeActiveForUser(ctx, userID); err != nil {
+		return err
+	}
+	if err := s.verifications.Create(ctx, util.NewID(), userID, util.SHA256Hex(code), time.Now().Add(10*time.Minute)); err != nil {
+		return err
+	}
+	if err := s.mailer.SendSignupOTP(ctx, email, code); err != nil {
+		log.Printf("WARN: signup otp email send failed for %s: %v", email, err)
+		return fmt.Errorf("could not send verification code")
+	}
+	return nil
+}
+
 func (s *AuthService) issueAndStoreRefresh(ctx context.Context, userID, role string) (string, string, error) {
 	now := time.Now()
 	accessJTI := util.NewID()
@@ -203,4 +270,24 @@ func validPassword(p string) bool {
 		lowerRe.MatchString(p) &&
 		numberRe.MatchString(p) &&
 		specialRe.MatchString(p)
+}
+
+func validOTP(code string) bool {
+	matched, _ := regexp.MatchString(`^\d{6}$`, code)
+	return matched
+}
+
+func generateOTPCode(length int) (string, error) {
+	if length <= 0 {
+		return "", domain.ErrInvalidInput
+	}
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	out := make([]byte, length)
+	for i, b := range bytes {
+		out[i] = '0' + (b % 10)
+	}
+	return string(out), nil
 }
