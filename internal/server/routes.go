@@ -65,7 +65,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	paymentsSvc := services.NewPaymentsService(d.DB, ps, ledgerRepo, checkoutRepo)
 	vendorSvc := services.NewVendorService(d.DB, vendorsRepo, vpRepo, payoutsRepo)
 	adminSvc := services.NewAdminService(d.DB, metricsRepo, usersRepo, refreshRepo, securityEventsRepo, productsRepo, vendorsRepo, settingsRepo, payoutsRepo, disputesRepo, adminLogsRepo, ledgerRepo)
-	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo)
+	visitAnalyticsSvc := services.NewVisitAnalyticsService(visitAnalyticsRepo, usersRepo, d.Cfg.JWTKey)
 	supportSvc := services.NewSupportService(d.DB, supportRepo, adminLogsRepo)
 
 	// handlers
@@ -144,6 +144,8 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ad.Use(middleware.RequireRole("super_admin", "ops_admin", "finance_admin"))
 
 		ad.Get("/metrics", adminH.Metrics)
+		ad.Get("/visitors", analyticsH.ListVisitorSessions)
+		ad.Get("/visitors/{visitorKey}", analyticsH.GetVisitorSession)
 		ad.Get("/users", adminH.ListUsers)
 		ad.Get("/security-events", adminH.ListSecurityEvents)
 		ad.Post("/users/{id}/logout", adminH.LogoutUser)

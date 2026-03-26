@@ -11,13 +11,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
+	"rhovic/backend/internal/domain"
 	"rhovic/backend/internal/repo"
 	"rhovic/backend/internal/util"
 )
 
 type VisitAnalyticsService struct {
-	repo   *repo.VisitAnalyticsRepo
-	client *http.Client
+	repo    *repo.VisitAnalyticsRepo
+	users   *repo.UsersRepo
+	client  *http.Client
+	jwtKey  []byte
 }
 
 type VisitTrackInput struct {
@@ -40,9 +45,11 @@ type ipWhoResponse struct {
 	City    string `json:"city"`
 }
 
-func NewVisitAnalyticsService(repo *repo.VisitAnalyticsRepo) *VisitAnalyticsService {
+func NewVisitAnalyticsService(repo *repo.VisitAnalyticsRepo, users *repo.UsersRepo, jwtSecret string) *VisitAnalyticsService {
 	return &VisitAnalyticsService{
-		repo: repo,
+		repo:  repo,
+		users: users,
+		jwtKey: []byte(jwtSecret),
 		client: &http.Client{
 			Timeout: 3 * time.Second,
 		},
@@ -61,9 +68,12 @@ func (s *VisitAnalyticsService) Track(ctx context.Context, r *http.Request, inpu
 
 	ip := clientIP(r)
 	geo := s.lookupGeo(ctx, ip)
+	userID, userEmail := s.identifyUser(ctx, r)
 	event := repo.VisitEvent{
 		ID:         util.NewID(),
 		VisitorKey: visitorKey(ip, input.UserAgent),
+		UserID:     userID,
+		UserEmail:  userEmail,
 		Path:       path,
 		Referrer:   strings.TrimSpace(input.Referrer),
 		Country:    geo.Country,
@@ -74,6 +84,14 @@ func (s *VisitAnalyticsService) Track(ctx context.Context, r *http.Request, inpu
 		CreatedAt:  time.Now().UTC(),
 	}
 	return s.repo.Create(ctx, event)
+}
+
+func (s *VisitAnalyticsService) ListSessions(ctx context.Context, search, country string, limit, offset int) (repo.VisitorSessionListResult, error) {
+	return s.repo.ListSessions(ctx, search, country, limit, offset)
+}
+
+func (s *VisitAnalyticsService) GetSession(ctx context.Context, visitorKey string) (repo.VisitorSessionDetail, error) {
+	return s.repo.GetSession(ctx, visitorKey)
 }
 
 func (s *VisitAnalyticsService) lookupGeo(ctx context.Context, ip string) VisitGeo {
@@ -135,6 +153,42 @@ func clientIP(r *http.Request) string {
 func visitorKey(ip, userAgent string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(ip) + "|" + strings.TrimSpace(userAgent)))
 	return hex.EncodeToString(sum[:])
+}
+
+func (s *VisitAnalyticsService) identifyUser(ctx context.Context, r *http.Request) (*string, string) {
+	if s.users == nil || len(s.jwtKey) == 0 {
+		return nil, ""
+	}
+	cookie, err := r.Cookie("rhovic_access_token")
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return nil, ""
+	}
+	tok, err := jwt.Parse(strings.TrimSpace(cookie.Value), func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return s.jwtKey, nil
+	})
+	if err != nil || !tok.Valid {
+		return nil, ""
+	}
+	claims, ok := tok.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, ""
+	}
+	sub, _ := claims["sub"].(string)
+	if strings.TrimSpace(sub) == "" {
+		return nil, ""
+	}
+	user, err := s.users.GetByID(ctx, sub)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			return nil, ""
+		}
+		return nil, ""
+	}
+	id := user.ID
+	return &id, user.Email
 }
 
 func firstNonEmpty(values ...string) string {
