@@ -156,6 +156,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 
 		ad.Get("/products", adminH.ListProducts)
 		ad.Patch("/products/{id}/commission", adminH.UpdateProductCommission)
+		ad.Delete("/products/{id}", adminH.DeleteProduct)
 
 		ad.Get("/payouts", adminH.ListPayouts)
 		ad.Patch("/payouts/{id}/approve", adminH.ApprovePayout)

@@ -134,6 +134,19 @@ func (s *AdminService) UpdateProductCommission(ctx context.Context, adminID, pro
 	return s.products.UpdateAdminCommission(ctx, productID, rate)
 }
 
+func (s *AdminService) DeleteProduct(ctx context.Context, adminID, productID string) error {
+	if _, err := s.products.Get(ctx, productID); err != nil {
+		return domain.ErrNotFound
+	}
+	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM products WHERE id = $1`, productID); err != nil {
+			return err
+		}
+		status := "deleted"
+		return s.logs.Log(ctx, tx, util.NewID(), adminID, "product_deleted", "product", productID, nil, &status)
+	})
+}
+
 func (s *AdminService) ApproveVendor(ctx context.Context, adminID, vendorID string) error {
 	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var current string

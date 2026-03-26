@@ -195,6 +195,16 @@ func (h *AdminHandlers) UpdateProductCommission(w http.ResponseWriter, r *http.R
 	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
 
+func (h *AdminHandlers) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	u := middleware.MustAuth(r)
+	id := chi.URLParam(r, "id")
+	if err := h.admin.DeleteProduct(r.Context(), u.UserID, id); err != nil {
+		httpjson.Error(w, 400, "failed", err.Error())
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{"ok": true})
+}
+
 func (h *AdminHandlers) ListPayouts(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	vendorID := r.URL.Query().Get("vendor_id")

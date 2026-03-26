@@ -95,6 +95,11 @@ func (r *ProductsRepo) UpdateAdminCommission(ctx context.Context, id string, rat
 	return err
 }
 
+func (r *ProductsRepo) Delete(ctx context.Context, id string) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM products WHERE id = $1`, id)
+	return err
+}
+
 func (r *ProductsRepo) UnpublishByVendor(ctx context.Context, vendorID string) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE products
