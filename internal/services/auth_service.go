@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"regexp"
 	"strings"
@@ -232,7 +231,7 @@ func (s *AuthService) sendVerificationOTP(ctx context.Context, userID, email str
 	}
 	if err := s.mailer.SendSignupOTP(ctx, email, code); err != nil {
 		log.Printf("WARN: signup otp email send failed for %s: %v", email, err)
-		return fmt.Errorf("could not send verification code")
+		return domain.ErrEmailDeliveryFailed
 	}
 	return nil
 }

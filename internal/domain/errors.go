@@ -13,4 +13,5 @@ var (
 	ErrInsufficient   = errors.New("insufficient balance")
 	ErrInvalidWebhook = errors.New("invalid webhook")
 	ErrEmailUnverified = errors.New("email not verified")
+	ErrEmailDeliveryFailed = errors.New("email delivery failed")
 )

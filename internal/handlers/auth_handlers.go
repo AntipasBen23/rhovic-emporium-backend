@@ -93,6 +93,8 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, domain.ErrConflict):
 			httpjson.Error(w, 409, "account already exists", "An account with this email already exists. Log in or verify the email address to continue.")
+		case errors.Is(err, domain.ErrEmailDeliveryFailed):
+			httpjson.Error(w, 503, "verification email unavailable", "We created your account, but could not send the verification code right now. Please try resending the code shortly.")
 		case errors.Is(err, domain.ErrInvalidInput):
 			httpjson.Error(w, 400, "registration failed", "Please check your details and try again.")
 		default:
