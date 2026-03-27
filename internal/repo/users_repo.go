@@ -106,6 +106,15 @@ func (r *UsersRepo) UpdatePassword(ctx context.Context, id, passwordHash string)
 	return err
 }
 
+func (r *UsersRepo) UpdatePasswordAndRole(ctx context.Context, id, passwordHash string, role domain.Role) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2, role = $3
+		WHERE id = $1 AND deleted_at IS NULL
+	`, id, passwordHash, role)
+	return err
+}
+
 func (r *UsersRepo) AdminList(ctx context.Context, search, role string, includeDeleted bool, limit, offset int) (AdminUserListResult, error) {
 	search = "%" + search + "%"
 	var total int64

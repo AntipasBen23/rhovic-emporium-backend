@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 	"time"
 
 	"rhovic/backend/internal/domain"
@@ -38,12 +39,31 @@ func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, rese
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string, role domain.Role, vendor domain.VendorRegisterProfile) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
 	if !validEmail(email) || !validPassword(password) {
 		return "", domain.ErrInvalidInput
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), 12)
+
+	existing, err := s.users.GetByEmail(ctx, email)
+	if err == nil {
+		if existing.EmailVerifiedAt != nil {
+			return "", domain.ErrConflict
+		}
+		if err := s.users.UpdatePasswordAndRole(ctx, existing.ID, string(hash), role); err != nil {
+			return existing.ID, err
+		}
+		if err := s.sendVerificationOTP(ctx, existing.ID, email); err != nil {
+			return existing.ID, err
+		}
+		return existing.ID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+
 	uid := util.NewID()
-	err := s.users.Create(ctx, domain.User{ID: uid, Email: email, PasswordHash: string(hash), Role: role})
+	err = s.users.Create(ctx, domain.User{ID: uid, Email: email, PasswordHash: string(hash), Role: role})
 	if err != nil {
 		return uid, err
 	}
@@ -61,6 +81,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string, role
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
 	u, err := s.users.GetByEmail(ctx, email)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
 		return "", "", domain.ErrUnauthorized
@@ -109,6 +130,7 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
 	if !validEmail(email) {
 		return domain.ErrInvalidInput
 	}
@@ -156,6 +178,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 }
 
 func (s *AuthService) VerifyEmailOTP(ctx context.Context, email, code string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
 	if !validEmail(email) || !validOTP(code) {
 		return domain.ErrInvalidInput
 	}
@@ -173,6 +196,7 @@ func (s *AuthService) VerifyEmailOTP(ctx context.Context, email, code string) er
 }
 
 func (s *AuthService) ResendEmailOTP(ctx context.Context, email string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
 	if !validEmail(email) {
 		return domain.ErrInvalidInput
 	}
