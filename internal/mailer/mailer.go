@@ -3,6 +3,7 @@ package mailer
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -141,6 +142,10 @@ func (c *Client) sendSMTP(ctx context.Context, to, subject, text, html string) e
 
 	errCh := make(chan error, 1)
 	go func() {
+		if c.cfg.SMTPPort == 465 {
+			errCh <- c.sendSMTPTLS(address, auth, to, []byte(msg.String()))
+			return
+		}
 		errCh <- smtp.SendMail(address, auth, c.cfg.SMTPFromEmail, []string{to}, []byte(msg.String()))
 	}()
 
@@ -150,6 +155,47 @@ func (c *Client) sendSMTP(ctx context.Context, to, subject, text, html string) e
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (c *Client) sendSMTPTLS(address string, auth smtp.Auth, to string, msg []byte) error {
+	conn, err := tls.Dial("tcp", address, &tls.Config{
+		ServerName: c.cfg.SMTPHost,
+		MinVersion: tls.VersionTLS12,
+	})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, c.cfg.SMTPHost)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if ok, _ := client.Extension("AUTH"); ok {
+		if err := client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(c.cfg.SMTPFromEmail); err != nil {
+		return err
+	}
+	if err := client.Rcpt(to); err != nil {
+		return err
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(msg); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func (c *Client) sendResend(ctx context.Context, to, subject, text, html string) error {
