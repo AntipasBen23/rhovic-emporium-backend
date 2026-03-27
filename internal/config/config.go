@@ -29,6 +29,12 @@ type Config struct {
 	CORSAllowedOrigins    []string
 	FrontendURL           string
 	EmailProvider         string
+	SMTPHost              string
+	SMTPPort              int
+	SMTPUsername          string
+	SMTPPassword          string
+	SMTPFromEmail         string
+	SMTPFromName          string
 	ResendAPIKey          string
 	ResendFromEmail       string
 	SendGridAPIKey        string
@@ -60,6 +66,12 @@ func Load() Config {
 		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
 		FrontendURL:       getEnv("FRONTEND_URL", "http://localhost:3000"),
 		EmailProvider:     strings.ToLower(getEnv("EMAIL_PROVIDER", "")),
+		SMTPHost:          getEnv("SMTP_HOST", ""),
+		SMTPPort:          getInt("SMTP_PORT", 587),
+		SMTPUsername:      getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:      getEnv("SMTP_PASSWORD", ""),
+		SMTPFromEmail:     getEnv("SMTP_FROM_EMAIL", ""),
+		SMTPFromName:      getEnv("SMTP_FROM_NAME", "RHOVIC"),
 		ResendAPIKey:      getEnv("RESEND_API_KEY", ""),
 		ResendFromEmail:   getEnv("RESEND_FROM_EMAIL", ""),
 		SendGridAPIKey:    getEnv("SENDGRID_API_KEY", ""),

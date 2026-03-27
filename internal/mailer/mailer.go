@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"strings"
 	"time"
@@ -20,6 +21,12 @@ type Sender interface {
 type Config struct {
 	Provider          string
 	FrontendURL       string
+	SMTPHost          string
+	SMTPPort          int
+	SMTPUsername      string
+	SMTPPassword      string
+	SMTPFromEmail     string
+	SMTPFromName      string
 	ResendAPIKey      string
 	ResendFromEmail   string
 	SendGridAPIKey    string
@@ -58,6 +65,8 @@ func (c *Client) SendPasswordReset(ctx context.Context, to, token string) error 
 	)
 
 	switch provider {
+	case "smtp":
+		return c.sendSMTP(ctx, to, subject, text, html)
 	case "resend":
 		return c.sendResend(ctx, to, subject, text, html)
 	case "sendgrid":
@@ -84,12 +93,62 @@ func (c *Client) SendSignupOTP(ctx context.Context, to, code string) error {
 	)
 
 	switch provider {
+	case "smtp":
+		return c.sendSMTP(ctx, to, subject, text, html)
 	case "resend":
 		return c.sendResend(ctx, to, subject, text, html)
 	case "sendgrid":
 		return c.sendSendGrid(ctx, to, subject, text, html)
 	default:
 		return fmt.Errorf("unsupported email provider: %s", provider)
+	}
+}
+
+func (c *Client) sendSMTP(ctx context.Context, to, subject, text, html string) error {
+	if strings.TrimSpace(c.cfg.SMTPHost) == "" ||
+		c.cfg.SMTPPort <= 0 ||
+		strings.TrimSpace(c.cfg.SMTPUsername) == "" ||
+		strings.TrimSpace(c.cfg.SMTPPassword) == "" ||
+		strings.TrimSpace(c.cfg.SMTPFromEmail) == "" {
+		return fmt.Errorf("smtp config incomplete")
+	}
+
+	fromName := strings.TrimSpace(c.cfg.SMTPFromName)
+	if fromName == "" {
+		fromName = "RHOVIC"
+	}
+	fromHeader := fmt.Sprintf("%s <%s>", fromName, c.cfg.SMTPFromEmail)
+	boundary := fmt.Sprintf("rhovic-boundary-%d", time.Now().UnixNano())
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("From: %s\r\n", fromHeader))
+	msg.WriteString(fmt.Sprintf("To: %s\r\n", to))
+	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	msg.WriteString("MIME-Version: 1.0\r\n")
+	msg.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary))
+	msg.WriteString("\r\n")
+	msg.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	msg.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n")
+	msg.WriteString(text)
+	msg.WriteString("\r\n")
+	msg.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n")
+	msg.WriteString(html)
+	msg.WriteString("\r\n")
+	msg.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+
+	address := fmt.Sprintf("%s:%d", c.cfg.SMTPHost, c.cfg.SMTPPort)
+	auth := smtp.PlainAuth("", c.cfg.SMTPUsername, c.cfg.SMTPPassword, c.cfg.SMTPHost)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- smtp.SendMail(address, auth, c.cfg.SMTPFromEmail, []string{to}, []byte(msg.String()))
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		return err
 	}
 }
 

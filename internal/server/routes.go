@@ -51,6 +51,12 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	mail := mailer.New(mailer.Config{
 		Provider:          d.Cfg.EmailProvider,
 		FrontendURL:       d.Cfg.FrontendURL,
+		SMTPHost:          d.Cfg.SMTPHost,
+		SMTPPort:          d.Cfg.SMTPPort,
+		SMTPUsername:      d.Cfg.SMTPUsername,
+		SMTPPassword:      d.Cfg.SMTPPassword,
+		SMTPFromEmail:     d.Cfg.SMTPFromEmail,
+		SMTPFromName:      d.Cfg.SMTPFromName,
 		ResendAPIKey:      d.Cfg.ResendAPIKey,
 		ResendFromEmail:   d.Cfg.ResendFromEmail,
 		SendGridAPIKey:    d.Cfg.SendGridAPIKey,
