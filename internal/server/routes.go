@@ -97,6 +97,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		ar.Post("/reset-password", authH.ResetPassword)
 		ar.Post("/verify-email", authH.VerifyEmail)
 		ar.Post("/resend-verification", authH.ResendVerification)
+		ar.Get("/verification-status", authH.VerificationStatus)
 	})
 
 	// PUBLIC

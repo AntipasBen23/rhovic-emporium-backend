@@ -30,6 +30,13 @@ type AuthService struct {
 	refreshTTL time.Duration
 }
 
+type EmailVerificationStatus struct {
+	Email     string
+	OtpSentAt *time.Time
+	ExpiresAt *time.Time
+	Verified  bool
+}
+
 func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, verifications *repo.EmailVerificationTokensRepo, sender mailer.Sender, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
 	return &AuthService{
 		users: users, refresh: refresh, resets: resets, verifications: verifications, mailer: sender,
@@ -210,6 +217,36 @@ func (s *AuthService) ResendEmailOTP(ctx context.Context, email string) error {
 		return nil
 	}
 	return s.sendVerificationOTP(ctx, u.ID, u.Email)
+}
+
+func (s *AuthService) GetVerificationStatus(ctx context.Context, email string) (EmailVerificationStatus, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if !validEmail(email) {
+		return EmailVerificationStatus{}, domain.ErrInvalidInput
+	}
+	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return EmailVerificationStatus{Email: email}, nil
+		}
+		return EmailVerificationStatus{}, err
+	}
+	status := EmailVerificationStatus{
+		Email:    email,
+		Verified: u.EmailVerifiedAt != nil,
+	}
+	if status.Verified {
+		return status, nil
+	}
+	latest, err := s.verifications.GetLatestActiveForUser(ctx, u.ID)
+	if err != nil {
+		return EmailVerificationStatus{}, err
+	}
+	if latest != nil {
+		status.OtpSentAt = &latest.SentAt
+		status.ExpiresAt = &latest.ExpiresAt
+	}
+	return status, nil
 }
 
 func (s *AuthService) queueVerificationOTP(ctx context.Context, userID, email string) error {

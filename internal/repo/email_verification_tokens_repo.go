@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -9,6 +10,11 @@ import (
 )
 
 type EmailVerificationTokensRepo struct{ db *pgxpool.Pool }
+
+type VerificationStatus struct {
+	SentAt    time.Time
+	ExpiresAt time.Time
+}
 
 func NewEmailVerificationTokensRepo(db *pgxpool.Pool) *EmailVerificationTokensRepo {
 	return &EmailVerificationTokensRepo{db: db}
@@ -49,4 +55,24 @@ func (r *EmailVerificationTokensRepo) Consume(ctx context.Context, userID, codeH
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (r *EmailVerificationTokensRepo) GetLatestActiveForUser(ctx context.Context, userID string) (*VerificationStatus, error) {
+	var status VerificationStatus
+	err := r.db.QueryRow(ctx, `
+		SELECT created_at, expires_at
+		FROM email_verification_tokens
+		WHERE user_id = $1
+		  AND used_at IS NULL
+		  AND expires_at > now()
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, userID).Scan(&status.SentAt, &status.ExpiresAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &status, nil
 }

@@ -292,7 +292,28 @@ func (h *AuthHandlers) ResendVerification(w http.ResponseWriter, r *http.Request
 		httpjson.Error(w, 400, "resend failed", err.Error())
 		return
 	}
-	httpjson.Write(w, 200, map[string]any{"ok": true, "expires_in_minutes": 10})
+	status, _ := h.auth.GetVerificationStatus(r.Context(), req.Email)
+	httpjson.Write(w, 200, map[string]any{
+		"ok": true,
+		"expires_in_minutes": 10,
+		"otp_sent_at": status.OtpSentAt,
+		"expires_at": status.ExpiresAt,
+	})
+}
+
+func (h *AuthHandlers) VerificationStatus(w http.ResponseWriter, r *http.Request) {
+	email := strings.TrimSpace(r.URL.Query().Get("email"))
+	status, err := h.auth.GetVerificationStatus(r.Context(), email)
+	if err != nil {
+		httpjson.Error(w, 400, "bad request", "invalid email")
+		return
+	}
+	httpjson.Write(w, 200, map[string]any{
+		"email": status.Email,
+		"verified": status.Verified,
+		"otp_sent_at": status.OtpSentAt,
+		"expires_at": status.ExpiresAt,
+	})
 }
 
 func cookieSecure(r *http.Request) bool {
