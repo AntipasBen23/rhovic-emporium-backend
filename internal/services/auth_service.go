@@ -52,7 +52,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string, role
 		if err := s.users.UpdatePasswordAndRole(ctx, existing.ID, string(hash), role); err != nil {
 			return existing.ID, err
 		}
-		if err := s.sendVerificationOTP(ctx, existing.ID, email); err != nil {
+		if err := s.queueVerificationOTP(ctx, existing.ID, email); err != nil {
 			return existing.ID, err
 		}
 		return existing.ID, nil
@@ -73,7 +73,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string, role
 			return uid, err
 		}
 	}
-	if err := s.sendVerificationOTP(ctx, uid, email); err != nil {
+	if err := s.queueVerificationOTP(ctx, uid, email); err != nil {
 		return uid, err
 	}
 	return uid, nil
@@ -212,28 +212,54 @@ func (s *AuthService) ResendEmailOTP(ctx context.Context, email string) error {
 	return s.sendVerificationOTP(ctx, u.ID, u.Email)
 }
 
-func (s *AuthService) sendVerificationOTP(ctx context.Context, userID, email string) error {
-	if s.verifications == nil {
-		return errors.New("email verification store not configured")
+func (s *AuthService) queueVerificationOTP(ctx context.Context, userID, email string) error {
+	code, err := s.prepareVerificationOTP(ctx, userID)
+	if err != nil {
+		return err
 	}
 	if s.mailer == nil {
 		return errors.New("email provider not configured")
 	}
-	code, err := generateOTPCode(6)
+	go func(emailAddress, otpCode string) {
+		sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := s.mailer.SendSignupOTP(sendCtx, emailAddress, otpCode); err != nil {
+			log.Printf("WARN: async signup otp email send failed for %s: %v", emailAddress, err)
+		}
+	}(email, code)
+	return nil
+}
+
+func (s *AuthService) sendVerificationOTP(ctx context.Context, userID, email string) error {
+	code, err := s.prepareVerificationOTP(ctx, userID)
 	if err != nil {
 		return err
 	}
-	if err := s.verifications.RevokeActiveForUser(ctx, userID); err != nil {
-		return err
-	}
-	if err := s.verifications.Create(ctx, util.NewID(), userID, util.SHA256Hex(code), time.Now().Add(10*time.Minute)); err != nil {
-		return err
+	if s.mailer == nil {
+		return errors.New("email provider not configured")
 	}
 	if err := s.mailer.SendSignupOTP(ctx, email, code); err != nil {
 		log.Printf("WARN: signup otp email send failed for %s: %v", email, err)
 		return domain.ErrEmailDeliveryFailed
 	}
 	return nil
+}
+
+func (s *AuthService) prepareVerificationOTP(ctx context.Context, userID string) (string, error) {
+	if s.verifications == nil {
+		return "", errors.New("email verification store not configured")
+	}
+	code, err := generateOTPCode(6)
+	if err != nil {
+		return "", err
+	}
+	if err := s.verifications.RevokeActiveForUser(ctx, userID); err != nil {
+		return "", err
+	}
+	if err := s.verifications.Create(ctx, util.NewID(), userID, util.SHA256Hex(code), time.Now().Add(10*time.Minute)); err != nil {
+		return "", err
+	}
+	return code, nil
 }
 
 func (s *AuthService) issueAndStoreRefresh(ctx context.Context, userID, role string) (string, string, error) {
