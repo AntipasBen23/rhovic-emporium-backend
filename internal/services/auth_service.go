@@ -92,7 +92,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
 		return "", "", domain.ErrUnauthorized
 	}
-	if u.EmailVerifiedAt == nil {
+	if requiresVerifiedEmail(u.Role) && u.EmailVerifiedAt == nil {
 		return "", "", domain.ErrEmailUnverified
 	}
 	if err := s.users.UpdateLastLogin(ctx, u.ID); err != nil {
@@ -376,4 +376,13 @@ func generateOTPCode(length int) (string, error) {
 		out[i] = '0' + (b % 10)
 	}
 	return string(out), nil
+}
+
+func requiresVerifiedEmail(role domain.Role) bool {
+	switch role {
+	case domain.RoleAdminSuper, domain.RoleAdminOps, domain.RoleAdminFin:
+		return false
+	default:
+		return true
+	}
 }
