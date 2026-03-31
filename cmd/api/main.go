@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -36,17 +35,7 @@ func main() {
 	// 1. GLOBAL MIDDLEWARE MUST BE FIRST
 	r.Use(cors.Handler(cors.Options{
 		AllowOriginFunc: func(r *http.Request, origin string) bool {
-			if isAllowedOrigin(origin, cfg.CORSAllowedOrigins) {
-				return true
-			}
-			// fallback for trusted Netlify deploy previews/custom domains
-			u, err := url.Parse(origin)
-			if err != nil || u.Host == "" {
-				return false
-			}
-			host := strings.ToLower(u.Hostname())
-			scheme := strings.ToLower(u.Scheme)
-			return scheme == "https" && strings.HasSuffix(host, ".netlify.app")
+			return isAllowedOrigin(origin, cfg.CORSAllowedOrigins)
 		},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-Id"},

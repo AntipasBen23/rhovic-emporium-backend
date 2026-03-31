@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -8,7 +10,9 @@ import (
 
 	"rhovic/backend/internal/domain"
 	"rhovic/backend/internal/httpjson"
+	"rhovic/backend/internal/middleware"
 	"rhovic/backend/internal/services"
+	"rhovic/backend/internal/util"
 )
 
 type AuthHandlers struct {
@@ -138,7 +142,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	at, rt, err := h.auth.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, domain.ErrEmailUnverified) {
-			httpjson.Error(w, 403, "email verification required", "please verify your email with the code we sent")
+			httpjson.Error(w, 401, "invalid credentials", "Invalid credentials. If you recently signed up, verify your email and try again.")
 			return
 		}
 		h.protect.LogLoginFailure(r.Context(), req.Email, ipAddress, r.URL.Path)
@@ -330,6 +334,7 @@ func cookieSameSite(r *http.Request) http.SameSite {
 func setAuthCookies(w http.ResponseWriter, r *http.Request, access, refresh string) {
 	secure := cookieSecure(r)
 	sameSite := cookieSameSite(r)
+	csrfToken := generateCSRFToken()
 	http.SetCookie(w, &http.Cookie{
 		Name:     "rhovic_access_token",
 		Value:    access,
@@ -344,6 +349,15 @@ func setAuthCookies(w http.ResponseWriter, r *http.Request, access, refresh stri
 		Value:    refresh,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   60 * 60 * 24 * 30,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.CSRFCookieName(),
+		Value:    csrfToken,
+		Path:     "/",
+		HttpOnly: false,
 		Secure:   secure,
 		SameSite: sameSite,
 		MaxAge:   60 * 60 * 24 * 30,
@@ -367,6 +381,15 @@ func clearAuthCookies(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   -1,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.CSRFCookieName(),
+		Value:    "",
+		Path:     "/",
+		HttpOnly: false,
 		Secure:   secure,
 		SameSite: sameSite,
 		MaxAge:   -1,
@@ -396,4 +419,12 @@ func requestIP(r *http.Request) string {
 
 func uidOrEmpty(id string) string {
 	return strings.TrimSpace(id)
+}
+
+func generateCSRFToken() string {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return util.NewID()
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes)
 }

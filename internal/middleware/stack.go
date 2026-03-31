@@ -17,6 +17,7 @@ func ApplyBase(r chi.Router, opts StackOpts) {
 	r.Use(RequestID)
 	r.Use(Recoverer)
 	r.Use(SecurityHeaders)
+	r.Use(CSRFProtect())
 	r.Use(RateLimit(GlobalLimiter(opts.GlobalRPM)))
 
 	// basic DoS guard: limit body size handled in handlers decode
