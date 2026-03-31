@@ -89,6 +89,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	// AUTH (hard rate limit)
 	r.Route("/auth", func(ar chi.Router) {
 		middleware.ApplyAuthHardening(ar, d.Cfg.AuthRateLimitRPM)
+		ar.Get("/csrf", authH.CSRF)
 		ar.Post("/register", authH.Register)
 		ar.Post("/login", authH.Login)
 		ar.Post("/refresh", authH.Refresh)

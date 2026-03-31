@@ -35,6 +35,7 @@ type EmailVerificationStatus struct {
 	OtpSentAt *time.Time
 	ExpiresAt *time.Time
 	Verified  bool
+	ContextToken string
 }
 
 func NewAuthService(users *repo.UsersRepo, refresh *repo.RefreshTokensRepo, resets *repo.PasswordResetTokensRepo, verifications *repo.EmailVerificationTokensRepo, sender mailer.Sender, jwtSecret string, accessTTL, refreshTTL time.Duration) *AuthService {
@@ -235,6 +236,11 @@ func (s *AuthService) GetVerificationStatus(ctx context.Context, email string) (
 		Email:    email,
 		Verified: u.EmailVerifiedAt != nil,
 	}
+	token, err := s.issueVerificationContext(email)
+	if err != nil {
+		return EmailVerificationStatus{}, err
+	}
+	status.ContextToken = token
 	if status.Verified {
 		return status, nil
 	}
@@ -247,6 +253,14 @@ func (s *AuthService) GetVerificationStatus(ctx context.Context, email string) (
 		status.ExpiresAt = &latest.ExpiresAt
 	}
 	return status, nil
+}
+
+func (s *AuthService) GetVerificationStatusByToken(ctx context.Context, token string) (EmailVerificationStatus, error) {
+	email, err := s.parseVerificationContext(token)
+	if err != nil {
+		return EmailVerificationStatus{}, domain.ErrUnauthorized
+	}
+	return s.GetVerificationStatus(ctx, email)
 }
 
 func (s *AuthService) queueVerificationOTP(ctx context.Context, userID, email string) error {
@@ -327,6 +341,30 @@ func (s *AuthService) issueAndStoreRefresh(ctx context.Context, userID, role str
 		return "", "", err
 	}
 	return accessToken, refreshToken, nil
+}
+
+func (s *AuthService) issueVerificationContext(email string) (string, error) {
+	now := time.Now()
+	vt := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": email, "typ": "verification_context",
+		"exp": now.Add(30 * time.Minute).Unix(), "iat": now.Unix(),
+	})
+	return vt.SignedString(s.jwtKey)
+}
+
+func (s *AuthService) parseVerificationContext(token string) (string, error) {
+	claims, err := s.parse(token)
+	if err != nil {
+		return "", err
+	}
+	if typ, _ := claims["typ"].(string); typ != "verification_context" {
+		return "", domain.ErrUnauthorized
+	}
+	sub, _ := claims["sub"].(string)
+	if !validEmail(sub) {
+		return "", domain.ErrUnauthorized
+	}
+	return strings.TrimSpace(strings.ToLower(sub)), nil
 }
 
 func (s *AuthService) parse(token string) (jwt.MapClaims, error) {

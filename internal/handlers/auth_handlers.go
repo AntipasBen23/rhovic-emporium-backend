@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -111,6 +112,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		"email": req.Email,
 		"verification_required": true,
 		"expires_in_minutes": 10,
+		"verification_token": mustVerificationToken(h.auth, r.Context(), req.Email),
 	})
 }
 
@@ -180,6 +182,11 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	setAuthCookies(w, r, at, rt)
 	httpjson.Write(w, 200, map[string]any{"access_token": at, "refresh_token": rt})
+}
+
+func (h *AuthHandlers) CSRF(w http.ResponseWriter, r *http.Request) {
+	setCSRFCookie(w, r, generateCSRFToken(), 60*60*24*30)
+	httpjson.Write(w, 200, map[string]any{"ok": true})
 }
 
 type logoutReq struct {
@@ -302,21 +309,25 @@ func (h *AuthHandlers) ResendVerification(w http.ResponseWriter, r *http.Request
 		"expires_in_minutes": 10,
 		"otp_sent_at": status.OtpSentAt,
 		"expires_at": status.ExpiresAt,
+		"verification_token": status.ContextToken,
 	})
 }
 
 func (h *AuthHandlers) VerificationStatus(w http.ResponseWriter, r *http.Request) {
-	email := strings.TrimSpace(r.URL.Query().Get("email"))
-	status, err := h.auth.GetVerificationStatus(r.Context(), email)
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		httpjson.Error(w, 400, "bad request", "missing verification context")
+		return
+	}
+	status, err := h.auth.GetVerificationStatusByToken(r.Context(), token)
 	if err != nil {
-		httpjson.Error(w, 400, "bad request", "invalid email")
+		httpjson.Error(w, 400, "bad request", "invalid verification context")
 		return
 	}
 	httpjson.Write(w, 200, map[string]any{
-		"email": status.Email,
-		"verified": status.Verified,
 		"otp_sent_at": status.OtpSentAt,
 		"expires_at": status.ExpiresAt,
+		"verification_token": status.ContextToken,
 	})
 }
 
@@ -353,15 +364,7 @@ func setAuthCookies(w http.ResponseWriter, r *http.Request, access, refresh stri
 		SameSite: sameSite,
 		MaxAge:   60 * 60 * 24 * 30,
 	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     middleware.CSRFCookieName(),
-		Value:    csrfToken,
-		Path:     "/",
-		HttpOnly: false,
-		Secure:   secure,
-		SameSite: sameSite,
-		MaxAge:   60 * 60 * 24 * 30,
-	})
+	setCSRFCookie(w, r, csrfToken, 60*60*24*30)
 }
 
 func clearAuthCookies(w http.ResponseWriter, r *http.Request) {
@@ -385,15 +388,7 @@ func clearAuthCookies(w http.ResponseWriter, r *http.Request) {
 		SameSite: sameSite,
 		MaxAge:   -1,
 	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     middleware.CSRFCookieName(),
-		Value:    "",
-		Path:     "/",
-		HttpOnly: false,
-		Secure:   secure,
-		SameSite: sameSite,
-		MaxAge:   -1,
-	})
+	setCSRFCookie(w, r, "", -1)
 }
 
 func requestIP(r *http.Request) string {
@@ -427,4 +422,26 @@ func generateCSRFToken() string {
 		return util.NewID()
 	}
 	return base64.RawURLEncoding.EncodeToString(bytes)
+}
+
+func setCSRFCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
+	secure := cookieSecure(r)
+	sameSite := cookieSameSite(r)
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.CSRFCookieName(),
+		Value:    value,
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   maxAge,
+	})
+}
+
+func mustVerificationToken(auth *services.AuthService, ctx context.Context, email string) string {
+	status, err := auth.GetVerificationStatus(ctx, email)
+	if err != nil {
+		return ""
+	}
+	return status.ContextToken
 }
