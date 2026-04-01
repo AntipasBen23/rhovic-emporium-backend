@@ -95,6 +95,10 @@ func (s *AuthProtectionService) VerifyCaptcha(ctx context.Context, action, token
 	if s.captcha == nil || !s.captcha.Enabled() {
 		return nil
 	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
 	if s.captcha.Verify(ctx, token, ipAddress) {
 		return nil
 	}
