@@ -21,6 +21,11 @@ func CSRFProtect() func(http.Handler) http.Handler {
 				return
 			}
 
+			if shouldSkipCSRF(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			if strings.HasPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer ") {
 				next.ServeHTTP(w, r)
 				return
@@ -47,5 +52,19 @@ func CSRFProtect() func(http.Handler) http.Handler {
 
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+func shouldSkipCSRF(path string) bool {
+	switch strings.TrimSpace(path) {
+	case "/auth/login",
+		"/auth/register",
+		"/auth/forgot-password",
+		"/auth/reset-password",
+		"/auth/verify-email",
+		"/auth/resend-verification":
+		return true
+	default:
+		return false
 	}
 }
