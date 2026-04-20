@@ -105,7 +105,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Get("/products", pubH.ListProducts)
 	r.Get("/products/{id}", pubH.GetProduct)
 	r.Get("/categories", pubH.ListCategories)
-	r.Post("/analytics/visits", analyticsH.TrackVisit)
+	r.With(middleware.RateLimit(middleware.PathLimiter(60))).Post("/analytics/visits", analyticsH.TrackVisit)
 
 	// CHECKOUT / CUSTOMER ORDERS (buyer must be logged in)
 	r.With(middleware.JWTAuth(d.Cfg.JWTKey), middleware.RateLimit(middleware.UserLimiter(d.Cfg.AuthUserRateLimitRPM)), middleware.RequireRole("buyer")).Post("/checkout", checkoutH.Checkout)
