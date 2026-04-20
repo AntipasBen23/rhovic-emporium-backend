@@ -115,11 +115,22 @@ func (r *VisitAnalyticsRepo) ListSessions(ctx context.Context, search, country s
 				p.*,
 				ROW_NUMBER() OVER (PARTITION BY visitor_key ORDER BY created_at DESC) AS rn
 			FROM filtered p
+		),
+		agg AS (
+			SELECT
+				visitor_key,
+				MIN(created_at) AS first_seen,
+				MAX(created_at) AS last_seen,
+				COUNT(*) AS page_views,
+				MAX(NULLIF(user_email, '')) AS best_email,
+				MAX(user_id) AS best_user_id
+			FROM filtered
+			GROUP BY visitor_key
 		)
 		SELECT
 			r.visitor_key,
-			r.user_id,
-			COALESCE(NULLIF(r.user_email, ''), 'Anonymous') AS user_email,
+			agg.best_user_id,
+			COALESCE(agg.best_email, 'Anonymous') AS user_email,
 			COALESCE(NULLIF(r.country, ''), 'Unknown') AS country,
 			COALESCE(NULLIF(r.region, ''), 'Unknown') AS region,
 			COALESCE(NULLIF(r.state, ''), 'Unknown') AS state,
@@ -131,11 +142,7 @@ func (r *VisitAnalyticsRepo) ListSessions(ctx context.Context, search, country s
 			agg.last_seen,
 			agg.page_views
 		FROM ranked r
-		JOIN (
-			SELECT visitor_key, MIN(created_at) AS first_seen, MAX(created_at) AS last_seen, COUNT(*) AS page_views
-			FROM filtered
-			GROUP BY visitor_key
-		) agg ON agg.visitor_key = r.visitor_key
+		JOIN agg ON agg.visitor_key = r.visitor_key
 		WHERE r.rn = 1
 		ORDER BY agg.last_seen DESC
 		LIMIT $3 OFFSET $4
@@ -177,15 +184,24 @@ func (r *VisitAnalyticsRepo) GetSession(ctx context.Context, visitorKey string) 
 	var detail VisitorSessionDetail
 	err := r.db.QueryRow(ctx, `
 		WITH agg AS (
-			SELECT visitor_key, MIN(created_at) AS first_seen, MAX(created_at) AS last_seen, COUNT(*) AS page_views
+			SELECT
+				visitor_key,
+				MIN(created_at) AS first_seen,
+				MAX(created_at) AS last_seen,
+				COUNT(*) AS page_views,
+				MAX(NULLIF(user_email, '')) AS best_email,
+				MAX(user_id) AS best_user_id
 			FROM page_visits
 			WHERE visitor_key = $1
 			GROUP BY visitor_key
+		),
+		latest AS (
+			SELECT * FROM page_visits WHERE visitor_key = $1 ORDER BY created_at DESC LIMIT 1
 		)
 		SELECT
 			p.visitor_key,
-			p.user_id,
-			COALESCE(NULLIF(p.user_email, ''), 'Anonymous') AS user_email,
+			agg.best_user_id,
+			COALESCE(agg.best_email, 'Anonymous') AS user_email,
 			COALESCE(NULLIF(p.country, ''), 'Unknown') AS country,
 			COALESCE(NULLIF(p.region, ''), 'Unknown') AS region,
 			COALESCE(NULLIF(p.state, ''), 'Unknown') AS state,
@@ -196,11 +212,8 @@ func (r *VisitAnalyticsRepo) GetSession(ctx context.Context, visitorKey string) 
 			agg.first_seen,
 			agg.last_seen,
 			agg.page_views
-		FROM page_visits p
+		FROM latest p
 		JOIN agg ON agg.visitor_key = p.visitor_key
-		WHERE p.visitor_key = $1
-		ORDER BY p.created_at DESC
-		LIMIT 1
 	`, visitorKey).Scan(
 		&detail.Session.VisitorKey,
 		&detail.Session.UserID,
