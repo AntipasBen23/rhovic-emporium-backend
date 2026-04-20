@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,16 +20,25 @@ import (
 )
 
 type VisitAnalyticsService struct {
-	repo    *repo.VisitAnalyticsRepo
-	users   *repo.UsersRepo
-	client  *http.Client
-	jwtKey  []byte
+	repo   *repo.VisitAnalyticsRepo
+	users  *repo.UsersRepo
+	client *http.Client
+	jwtKey []byte
+	geo    geoCache
 }
 
 type VisitTrackInput struct {
 	Path      string `json:"path"`
 	Referrer  string `json:"referrer"`
 	UserAgent string `json:"user_agent"`
+}
+
+// TrackRequest holds everything extracted from an HTTP request before it closes.
+// Build one with CaptureRequest, then pass to Track in a goroutine.
+type TrackRequest struct {
+	Input      VisitTrackInput
+	IP         string
+	AuthCookie string
 }
 
 type VisitGeo struct {
@@ -45,42 +55,96 @@ type ipWhoResponse struct {
 	City    string `json:"city"`
 }
 
+type geoCacheEntry struct {
+	geo       VisitGeo
+	expiresAt time.Time
+}
+
+type geoCache struct {
+	mu      sync.RWMutex
+	entries map[string]geoCacheEntry
+}
+
+func (c *geoCache) get(ip string) (VisitGeo, bool) {
+	c.mu.RLock()
+	entry, ok := c.entries[ip]
+	c.mu.RUnlock()
+	if !ok || time.Now().After(entry.expiresAt) {
+		return VisitGeo{}, false
+	}
+	return entry.geo, true
+}
+
+func (c *geoCache) set(ip string, geo VisitGeo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= 5000 {
+		now := time.Now()
+		for k, v := range c.entries {
+			if now.After(v.expiresAt) {
+				delete(c.entries, k)
+			}
+		}
+		if len(c.entries) >= 5000 {
+			c.entries = make(map[string]geoCacheEntry)
+		}
+	}
+	c.entries[ip] = geoCacheEntry{geo: geo, expiresAt: time.Now().Add(6 * time.Hour)}
+}
+
 func NewVisitAnalyticsService(repo *repo.VisitAnalyticsRepo, users *repo.UsersRepo, jwtSecret string) *VisitAnalyticsService {
 	return &VisitAnalyticsService{
-		repo:  repo,
-		users: users,
+		repo:   repo,
+		users:  users,
 		jwtKey: []byte(jwtSecret),
-		client: &http.Client{
-			Timeout: 3 * time.Second,
-		},
+		client: &http.Client{Timeout: 3 * time.Second},
+		geo:    geoCache{entries: make(map[string]geoCacheEntry)},
 	}
 }
 
-func (s *VisitAnalyticsService) Track(ctx context.Context, r *http.Request, input VisitTrackInput) error {
-	path := strings.TrimSpace(input.Path)
-	if path == "" {
-		path = "/"
-	}
-
+// CaptureRequest extracts IP, user-agent, and auth cookie from r so tracking
+// can run asynchronously after the handler has already responded.
+func CaptureRequest(r *http.Request, input VisitTrackInput) TrackRequest {
 	if input.UserAgent == "" {
 		input.UserAgent = r.UserAgent()
 	}
+	var cookie string
+	if c, err := r.Cookie("rhovic_access_token"); err == nil {
+		cookie = strings.TrimSpace(c.Value)
+	}
+	return TrackRequest{
+		Input:      input,
+		IP:         clientIP(r),
+		AuthCookie: cookie,
+	}
+}
 
-	ip := clientIP(r)
-	geo := s.lookupGeo(ctx, ip)
-	userID, userEmail := s.identifyUser(ctx, r)
+func (s *VisitAnalyticsService) Track(ctx context.Context, tr TrackRequest) error {
+	path := strings.TrimSpace(tr.Input.Path)
+	if path == "" || !strings.HasPrefix(path, "/") {
+		path = "/"
+	}
+
+	geo, ok := s.geo.get(tr.IP)
+	if !ok {
+		geo = s.lookupGeo(ctx, tr.IP)
+		s.geo.set(tr.IP, geo)
+	}
+
+	userID, userEmail := s.identifyUser(ctx, tr.AuthCookie)
+
 	event := repo.VisitEvent{
 		ID:         util.NewID(),
-		VisitorKey: visitorKey(ip, input.UserAgent),
+		VisitorKey: visitorKey(tr.IP, tr.Input.UserAgent),
 		UserID:     userID,
 		UserEmail:  userEmail,
 		Path:       path,
-		Referrer:   strings.TrimSpace(input.Referrer),
+		Referrer:   strings.TrimSpace(tr.Input.Referrer),
 		Country:    geo.Country,
 		Region:     geo.Region,
 		State:      firstNonEmpty(geo.State, geo.Region),
 		City:       geo.City,
-		UserAgent:  strings.TrimSpace(input.UserAgent),
+		UserAgent:  strings.TrimSpace(tr.Input.UserAgent),
 		CreatedAt:  time.Now().UTC(),
 	}
 	return s.repo.Create(ctx, event)
@@ -98,7 +162,6 @@ func (s *VisitAnalyticsService) lookupGeo(ctx context.Context, ip string) VisitG
 	if ip == "" || ip == "127.0.0.1" || ip == "::1" {
 		return VisitGeo{}
 	}
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("https://ipwho.is/%s?fields=success,country,region,city", ip), nil)
 	if err != nil {
 		return VisitGeo{}
@@ -111,12 +174,10 @@ func (s *VisitAnalyticsService) lookupGeo(ctx context.Context, ip string) VisitG
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return VisitGeo{}
 	}
-
 	var out ipWhoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || !out.Success {
 		return VisitGeo{}
 	}
-
 	return VisitGeo{
 		Country: strings.TrimSpace(out.Country),
 		Region:  strings.TrimSpace(out.Region),
@@ -139,7 +200,6 @@ func clientIP(r *http.Request) string {
 			return ip.String()
 		}
 	}
-
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
 		if ip := net.ParseIP(host); ip != nil {
@@ -155,15 +215,11 @@ func visitorKey(ip, userAgent string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *VisitAnalyticsService) identifyUser(ctx context.Context, r *http.Request) (*string, string) {
-	if s.users == nil || len(s.jwtKey) == 0 {
+func (s *VisitAnalyticsService) identifyUser(ctx context.Context, cookieVal string) (*string, string) {
+	if s.users == nil || len(s.jwtKey) == 0 || cookieVal == "" {
 		return nil, ""
 	}
-	cookie, err := r.Cookie("rhovic_access_token")
-	if err != nil || strings.TrimSpace(cookie.Value) == "" {
-		return nil, ""
-	}
-	tok, err := jwt.Parse(strings.TrimSpace(cookie.Value), func(t *jwt.Token) (any, error) {
+	tok, err := jwt.Parse(cookieVal, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
 		}

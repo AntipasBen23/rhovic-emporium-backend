@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -25,12 +26,12 @@ func (h *AnalyticsHandlers) TrackVisit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.visits.Track(r.Context(), r, req); err != nil {
-		httpjson.Error(w, http.StatusInternalServerError, "failed", err.Error())
-		return
-	}
-
+	tr := services.CaptureRequest(r, req)
 	httpjson.Write(w, http.StatusAccepted, map[string]any{"ok": true})
+
+	go func() {
+		_ = h.visits.Track(context.Background(), tr)
+	}()
 }
 
 func (h *AnalyticsHandlers) ListVisitorSessions(w http.ResponseWriter, r *http.Request) {
